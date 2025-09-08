@@ -28,7 +28,7 @@ ASSUSERNAME = getenv("ASSUSERNAME" , "ASTA_ASSITANT")
 #---------------------------------------------------------------
 #---------------------------------------------------------------
 MONGO_DB_URI = getenv("MONGO_DB_URI")
-API_KEY = getenv("API_KEY"  '  "NxGBNexGenBotsdbfa2f")
+#API_KEY = getenv("API_KEY"  '  "")
 #---------------------------------------------------------------
 #---------------------------------------------------------------
 
@@ -51,6 +51,9 @@ OWNER_ID = int(getenv("OWNER_ID", 7464690589))
 HEROKU_APP_NAME = getenv("HEROKU_APP_NAME")
 # ----------------------------------------------------------------
 HEROKU_API_KEY = getenv("HEROKU_API_KEY")
+API_URL = getenv("API_URL", 'https://api.thequickearn.xyz') #youtube song url
+VIDEO_API_URL = getenv("VIDEO_API_URL", 'https://api.video.thequickearn.xyz')
+API_KEY = getenv("API_KEY", 'NxGBNexGenBotsdbfa2f') # youtube song api key
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------

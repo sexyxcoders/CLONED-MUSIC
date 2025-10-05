@@ -16,14 +16,14 @@ API_ID = int(getenv("API_ID"))
 API_HASH = getenv("API_HASH")
 
 BOT_TOKEN = getenv("BOT_TOKEN")
-BOT_ID = getenv("BOT_ID", "8477795771")
+BOT_ID = getenv("BOT_ID", "8276101060")
 
-OWNER_ID = int(getenv("OWNER_ID", 7464690589))
-OWNER_USERNAME = getenv("OWNER_USERNAME", "SemxyCarders")
+OWNER_ID = int(getenv("OWNER_ID", 7804917014))
+OWNER_USERNAME = getenv("OWNER_USERNAME", "Certifiedsexer")
 
-BOT_USERNAME = getenv("BOT_USERNAME", "AyakaXMusicBot")
-BOT_NAME = getenv("BOT_NAME", "Ａʏᴧᴋᴧ ꭗ‌ Ｍᴜ𝛅ɪᴄ")
-ASSUSERNAME = getenv("ASSUSERNAME", "Ayaka_Assistant")
+BOT_USERNAME = getenv("BOT_USERNAME", "EliviaMusicBot")
+BOT_NAME = getenv("BOT_NAME", "˹𝛆ℓ𝛊𝛎α ꭙ 𝐌𝛖𝛅𝛊𝛓˼")
+ASSUSERNAME = getenv("ASSUSERNAME", "ElivaxAssistant")
 
 # ====================================================
 # Database and Logging

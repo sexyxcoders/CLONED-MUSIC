@@ -7,12 +7,12 @@ import httpx
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 start_txt = """
-** FEEL ASTA DADDY POWER ** - Tʜᴇ Uʟᴛɪᴍᴀᴛᴇ Tᴇʟᴇɢʀᴀᴍ Mᴜsɪᴄ Sᴏʟᴜᴛɪᴏɴ ᴡɪᴛʜ ᴄʟᴏɴᴇ ғᴇᴀᴛᴜʀᴇs.
+** FEEL 𝚻𝚴𝐂 // 𝜤𝜵𝜦𝜨 DADDY POWER ** - Tʜᴇ Uʟᴛɪᴍᴀᴛᴇ Tᴇʟᴇɢʀᴀᴍ Mᴜsɪᴄ Sᴏʟᴜᴛɪᴏɴ ᴡɪᴛʜ ᴄʟᴏɴᴇ ғᴇᴀᴛᴜʀᴇs.
 
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━⧫
-┠ ◆ **sᴏᴜʀᴄᴇ ᴄᴏᴅᴇ:** [Click Here](https://t.me/ixasta1)  
-┠ ◆ **ᴅᴇᴠᴇʟᴏᴘᴇʀ:** [ᴧѕᴛᴧ ѕᴜᴘᴘσʀᴛ 🥂✨](https://t.me/ixasta1)
-┠ ◆ **ʀᴇʟᴇᴀsᴇᴅ ʙʏ:** [⋏ 𝛅 𝛕 ⋏](https://t.me/ixasta )
+┠ ◆ **sᴏᴜʀᴄᴇ ᴄᴏᴅᴇ:** [Click Here](https://t.me/SemxyCarders)  
+┠ ◆ **ᴅᴇᴠᴇʟᴏᴘᴇʀ:** [ ᴄʜᴀɴɴᴇʟ 🥂✨](https://t.me/TechNodeCoders)
+┠ ◆ **ʀᴇʟᴇᴀsᴇᴅ ʙʏ:** [ＴＮＣ // 𝖭ꫀƚω𝗈як](https://t.me/TNCmeetup )
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━⧫
 
 __Fᴏʀᴋ ɪᴛ, ᴄᴜsᴛᴏᴍɪᴢᴇ ɪᴛ, ᴀɴᴅ ᴍᴀᴋᴇ ɪᴛ ʏᴏᴜʀ ᴏᴡɴ!__

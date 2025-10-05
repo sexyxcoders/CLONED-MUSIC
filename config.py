@@ -57,10 +57,10 @@ API_KEY = getenv("API_KEY", 'NxGBNexGenBots4e1026') # youtube song api key
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-SOURCE = getenv("SOURCE", "https://github.com/ixasta1")
+SOURCE = getenv("SOURCE", "https://github.com/sexyxcoders")
 UPSTREAM_REPO = getenv(
     "UPSTREAM_REPO",
-    "https://github.com/laiba-music/ASTA_CLONE",
+    "https://github.com/sexyxcoders/CLONED-MUSIC",
 )
 UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "main")
 GIT_TOKEN = getenv(

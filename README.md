@@ -1,5 +1,5 @@
 <h2 align="center">
-    ───「 𝐍ᴏʙɪᴛᴀ 𝐌ᴜsɪᴄ 𝐂ᴏᴍᴍᴜɴɪᴛʏ 🜲 」───
+    ───「 ᴛɴᴄ ᴄʟᴏɴᴇᴅ ʙᴏᴛ ? 」───
 </h2>
 
 <p align="center">
@@ -46,11 +46,11 @@ For a full list of commands, use `/help` in [telegram](https://t.me/NOBITA_MUSIC
 </h3>
 
 <p align="center">
-<a href="https://t.me/+wPjAlUcObehiZDM1"><img src="https://img.shields.io/badge/-Support%20Group-blue.svg?style=for-the-badge&logo=Telegram"></a>
+<a href="https://t.me/TNCmeetup"><img src="https://img.shields.io/badge/-Support%20Group-blue.svg?style=for-the-badge&logo=Telegram"></a>
 </p>
 
 <p align="center">
-<a href="https://t.me/NOBITA_MUSIC_SUPPORT"><img src="https://img.shields.io/badge/-Update%20Channel-blue.svg?style=for-the-badge&logo=Telegram"></a>
+<a href="https://t.me/TechNodeCoders"><img src="https://img.shields.io/badge/-Update%20Channel-blue.svg?style=for-the-badge&logo=Telegram"></a>
 </p>
 
 <br />
@@ -59,4 +59,4 @@ For a full list of commands, use `/help` in [telegram](https://t.me/NOBITA_MUSIC
 
 <br />
 
-- <b> _𝐃𝐞𝐯𝐥𝐨𝐩𝐞𝐫 [𝚴 𝐎 𝐁 𝚰 𝐓 𝚲](https://t.me/ll_NOBITA_DEFAULTERS_ll) 
+- <b> _𝐃𝐞𝐯𝐥𝐨𝐩𝐞𝐫 [𝚻𝚴𝐂 // 𝜤𝜵𝜦𝜨](https://t.me/SemxyCarders) 

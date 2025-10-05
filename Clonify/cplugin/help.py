@@ -36,9 +36,9 @@ async def helper_private(
 
     #Cloned Bot Support Chat and channel
     C_BOT_SUPPORT_CHAT = await get_cloned_support_chat(bot.id)
-    C_SUPPORT_CHAT = f"https://t.me/oldskoolgc"
+    C_SUPPORT_CHAT = f"https://t.me/TNCmeetup"
     C_BOT_SUPPORT_CHANNEL = await get_cloned_support_channel(bot.id)
-    C_SUPPORT_CHANNEL = f"https://t.me/ixasta"
+    C_SUPPORT_CHANNEL = f"https://t.me/TechNodeCoders"
 
     is_callback = isinstance(update, types.CallbackQuery)
     if is_callback:
@@ -107,7 +107,7 @@ async def helper_cb(client, CallbackQuery, _):
     if cb == "hb9":
         if CallbackQuery.from_user.id not in SUDOERS:
             return await CallbackQuery.answer(
-                "😎 Pehle Asta Ko Papa Bol Jake 😆😆", show_alert=True
+                "😎 Pehle Ivan Ko Papa Bol Jake 😆😆", show_alert=True
             )
         else:
             await CallbackQuery.edit_message_text(helpers.HELP_9, reply_markup=keyboard)

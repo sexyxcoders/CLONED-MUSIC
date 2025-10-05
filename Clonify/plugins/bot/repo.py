@@ -26,18 +26,18 @@ __Fᴏʀᴋ ɪᴛ, ᴄᴜsᴛᴏᴍɪᴢᴇ ɪᴛ, ᴀɴᴅ ᴍᴀᴋᴇ ɪᴛ �
 async def start(_, msg):
     buttons = [
         [
-                InlineKeyboardButton("𝗦𝗨𝗣𝗣𝗢𝗥𝗧", url="https://t.me/oldskoolgc"),
-                InlineKeyboardButton("𝗨𝗣𝗗𝗔𝗧𝗘", url="https://t.me/ixasta1")
+                InlineKeyboardButton("𝗦𝗨𝗣𝗣𝗢𝗥𝗧", url="https://t.me/TNCmeetup"),
+                InlineKeyboardButton("𝗨𝗣𝗗𝗔𝗧𝗘", url="https://t.me/SemxyCarders")
         ],
         [ 
-          InlineKeyboardButton("𝗦𝗢𝗨𝗥𝗖𝗘 𝗖𝗢𝗗𝗘", url=f"https://t.me/ixasta1")
+          InlineKeyboardButton("𝗦𝗢𝗨𝗥𝗖𝗘 𝗖𝗢𝗗𝗘", url=f"https://t.me/TNCmeetup")
         ]
     ]
     
     reply_markup = InlineKeyboardMarkup(buttons)
     
     await msg.reply_photo(
-        photo="https://files.catbox.moe/3gykym.jpg",
+        photo="https://files.catbox.moe/bpxk9p.jpg",
         caption=start_txt,
         reply_markup=reply_markup
     )
@@ -46,11 +46,11 @@ async def start(_, msg):
 # --------------
 
 
-@app.on_message(filters.command("repo", prefixes="#"))
+@app.on_message(filters.command("repo", prefixes="/"))
 @capture_err
 async def repo(_, message):
     async with httpx.AsyncClient() as client:
-        response = await client.get("https://t.me/ixasta1")
+        response = await client.get("https://t.me/SemxyCarders")
     
     if response.status_code == 200:
         users = response.json()
@@ -60,7 +60,7 @@ async def repo(_, message):
             list_of_users += f"{count}. [{user['login']}]({user['html_url']})\n"
             count += 1
 
-        text = f"""[𝖱𝖤𝖯𝖮 𝖫𝖨𝖭𝖪](https://t.me/ixasta1) | [𝖦𝖱𝖮𝖴𝖯](https://t.me/oldskoolgc)
+        text = f"""[𝖱𝖤𝖯𝖮 𝖫𝖨𝖭𝖪](https://t.me/SemxyCarders) | [𝖦𝖱𝖮𝖴𝖯](https://t.me/TNCmeetup)
 | 𝖢𝖮𝖭𝖳𝖱𝖨𝖡𝖴𝖳𝖮𝖱𝖲 |
 ----------------
 {list_of_users}"""

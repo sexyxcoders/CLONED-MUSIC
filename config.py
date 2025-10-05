@@ -51,7 +51,7 @@ API_KEY = getenv("API_KEY", "NxGBNexGenBots4e1026")
 SOURCE = getenv("SOURCE", "https://github.com/sexyxcoders")
 UPSTREAM_REPO = getenv("UPSTREAM_REPO", "https://github.com/sexyxcoders/CLONED-MUSIC")
 UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "main")
-GIT_TOKEN = getenv("GIT_TOKEN", None)
+GIT_TOKEN = getenv("GIT_TOKEN", "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")
 
 # ====================================================
 # Support Links

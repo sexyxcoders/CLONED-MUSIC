@@ -151,7 +151,7 @@ STREAMI_PICS = [
 ]
 
 START_IMG_URL = getenv(
-    "START_IMG_URL", "https://files.catbox.moe/xbnrdv.jpg"
+    "START_IMG_URL", "https://files.catbox.moe/zywku1.jpg"
 )
 
 HELP_IMG_URL = getenv(
@@ -159,18 +159,18 @@ HELP_IMG_URL = getenv(
 )
 
 PING_IMG_URL = getenv(
-    "PING_IMG_URL", "https://files.catbox.moe/tcz7s6.jpg"
+    "PING_IMG_URL", "https://files.catbox.moe/we2hw5.jpg"
 )
-PLAYLIST_IMG_URL = "https://i.ibb.co/gL3ykkyh/play-music.jpg"
-STATS_IMG_URL = "https://files.catbox.moe/tcz7s6.jpg"
-TELEGRAM_AUDIO_URL = "https://i.ibb.co/gL3ykkyh/play-music.jpg"
+PLAYLIST_IMG_URL = "https://files.catbox.moe/kh9h0n.jpg"
+STATS_IMG_URL = "https://files.catbox.moe/jdwd10.jpg"
+TELEGRAM_AUDIO_URL = "https://files.catbox.moe/kh9h0n.jpg"
 TELEGRAM_VIDEO_URL = "https://i.ibb.co/gL3ykkyh/play-music.jpg"
-STREAM_IMG_URL = "https://i.ibb.co/0VKCS20y/stream.jpg"
-SOUNCLOUD_IMG_URL = "https://i.ibb.co/S4sPf3q8/soundcloud.jpg"
-YOUTUBE_IMG_URL = "https://i.ibb.co/xShkBVBK/youtube.jpg"
-SPOTIFY_ARTIST_IMG_URL = "https://i.ibb.co/XZfMS8Db/spotify.jpg"
-SPOTIFY_ALBUM_IMG_URL = "https://i.ibb.co/XZfMS8Db/spotify.jpg"
-SPOTIFY_PLAYLIST_IMG_URL = "https://i.ibb.co/XZfMS8Db/spotify.jpg"
+STREAM_IMG_URL = "https://files.catbox.moe/kh9h0n.jpg"
+SOUNCLOUD_IMG_URL = "https://files.catbox.moe/kh9h0n.jpg"
+YOUTUBE_IMG_URL = "https://files.catbox.moe/kh9h0n.jpg"
+SPOTIFY_ARTIST_IMG_URL = "https://files.catbox.moe/kh9h0n.jpg"
+SPOTIFY_ALBUM_IMG_URL = "https://files.catbox.moe/kh9h0n.jpg"
+SPOTIFY_PLAYLIST_IMG_URL = "https://files.catbox.moe/kh9h0n.jpg"
 
 # ------------------------------------------------------------------------
 # ------------------------------------------------------------------------

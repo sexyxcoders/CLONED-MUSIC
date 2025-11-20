@@ -2,7 +2,7 @@ import time
 import psutil
 import requests
 from pyrogram import filters
-from NexaMusic import app
+from Clonify import app
 
 
 @app.on_callback_query(filters.regex("api_pong"))

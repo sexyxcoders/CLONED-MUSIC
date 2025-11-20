@@ -16,14 +16,14 @@ API_ID = int(getenv("API_ID"))
 API_HASH = getenv("API_HASH")
 
 BOT_TOKEN = getenv("BOT_TOKEN")
-BOT_ID = getenv("BOT_ID", "8276101060")
+BOT_ID = getenv("BOT_ID", "8588527575")
 
 OWNER_ID = int(getenv("OWNER_ID", 7804917014))
-OWNER_USERNAME = getenv("OWNER_USERNAME", "Certifiedsexer")
+OWNER_USERNAME = getenv("OWNER_USERNAME", "noncarder")
 
-BOT_USERNAME = getenv("BOT_USERNAME", "EliviaMusicBot")
+BOT_USERNAME = getenv("BOT_USERNAME", "NexaEraMusicBot")
 BOT_NAME = getenv("BOT_NAME", "˹𝛆ℓ𝛊𝛎α ꭙ 𝐌𝛖𝛅𝛊𝛓˼")
-ASSUSERNAME = getenv("ASSUSERNAME", "ElivaxAssistant")
+ASSUSERNAME = getenv("ASSUSERNAME", "NexaAssistant")
 
 # ====================================================
 # Database and Logging
@@ -56,9 +56,9 @@ GIT_TOKEN = getenv("GIT_TOKEN", "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")
 # ====================================================
 # Support Links
 # ====================================================
-SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/TechNodeCoders")
-SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/TNCmeetup")
-CHAT = getenv("CHAT", "https://t.me/+HhorrN41FkplODgx")
+SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/NexaCoders")
+SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/NexaMeetup")
+CHAT = getenv("CHAT", "https://t.me/NexaMeetup")
 
 # ====================================================
 # Assistant Settings

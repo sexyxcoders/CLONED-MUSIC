@@ -21,7 +21,7 @@ from config import API_URL, VIDEO_API_URL, API_KEY
 YOUR_API_URL = "http://46.250.243.52:1470"
 
 def cookie_txt_file():
-    cookie_dir = "VILLAIN_MUSIC/cookies"
+    cookie_dir = "Clonify/cookies"
     if not os.path.exists(cookie_dir):
         return None
     cookies_files = [f for f in os.listdir(cookie_dir) if f.endswith(".txt")]

@@ -1,6 +1,6 @@
 from pyrogram import filters
 
-from NexaMusic.utils.admin_check import admins_check
+from Clonify.utils.admin_check import admins_check
 
 USE_AS_BOT = True
 

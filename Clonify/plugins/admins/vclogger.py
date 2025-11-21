@@ -26,7 +26,7 @@ from pyrogram.types import (
 from pyrogram.raw import functions
 
 from Clonify import app
-#from Clonify.utils.database.assistant import get_assistant   # FIXED
+from Clonify.utils.Tnc_checker import admins_check
 
 LOGGER = getLogger(__name__)   # FIXED
 

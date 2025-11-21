@@ -26,7 +26,7 @@ from pyrogram.types import (
 from pyrogram.raw import functions
 
 from Clonify import app
-from Clonify.utils.database.assistantdatabase import get_assistant
+from from Clonify.utils.database.assistant import get_assistant
 
 LOGGER = getLogger(__name__)
 

@@ -1,31 +1,25 @@
 """ vclogger.py — Clean, robust full rewrite (Option A)
 
-Features:
+This is a complete, syntactically-correct rewrite in a plain "normal" Python style.
 
-Reliable admin check using app.get_chat_member
+Reliable admin check (uses app.get_chat_member with fallback)
 
-Robust monitor loop using assistant (get_assistant placeholder)
+Monitor loop uses a get_assistant(chat_id) placeholder (adapt this to your project)
 
-Persistent JSON config (enable/disable, style, cooldown, delete_after)
+Persistent JSON config for per-chat settings
 
-Six visual styles + random option
+Six message styles (triple-quoted, safe) + random option
 
-Per-chat cooldown and auto-delete
+Cooldown, auto-delete, manual refresh, callback handlers
 
-Refresh, manual refresh commands, and callback handlers
-
-Safe exception handling and logging
-
-Minimal, well-documented API to integrate with your project
+Clear logging and safe exception handling
 
 
-Notes for integration:
+Integration notes:
 
-Provide a get_assistant(chat_id) coroutine that returns an assistant Pyrogram client instance (userbot) which can call raw methods (functions.channels.GetFullChannel and functions.phone.GetGroupParticipants). If your project already exposes this utility under a different name, adapt the call accordingly.
+Replace get_assistant with your project's assistant lookup if necessary.
 
-The module uses app imported from Clonify (your bot). Keep that as-is.
-
-This file intentionally avoids external DBs; if you want database-backed config, replace the JSON helpers with your DB calls.
+Ensure app imported from Clonify is your running Bot client.
 
 
 """
@@ -44,7 +38,7 @@ Runtime state
 
 -------------------------
 
-vc_active_users: Dict[int, Set[int]] = {} active_vc_chats: Set[int] = set() last_sent_time: Dict[int, float] = {}  # chat_id -> timestamp (cooldown) recent_join_times: Dict[int, Dict[int, float]] = {}  # chat_id -> {user_id: join_ts} _monitor_tasks: Dict[int, asyncio.Task] = {}
+vc_active_users: Dict[int, Set[int]] = {} active_vc_chats: Set[int] = set() last_sent_time: Dict[int, float] = {} recent_join_times: Dict[int, Dict[int, float]] = {} _monitor_tasks: Dict[int, asyncio.Task] = {}
 
 -------------------------
 
@@ -80,63 +74,63 @@ def set_style(chat_id: int, style_name: str) -> None: set_chat_cfg(chat_id, "sty
 
 -------------------------
 
-Style functions
+Styles (safe triple-quoted strings)
 
 -------------------------
 
-def style_premium(name, username, user_id, total, join_time_iso): return f""" 💫 <b>New Member Joined VC</b>
+def style_premium(name, username, user_id, total, join_time_iso): return (f""" 💫 <b>New Member Joined VC</b>
 
 👤 <b>Name:</b> {name} 🔗 <b>Username:</b> {username} 🆔 <b>ID:</b> <code>{user_id}</code>
 
 👥 <b>Total in VC:</b> <code>{total}</code> 🕒 <b>Join Time:</b> {join_time_iso}
 
-✨ <i>Welcome to the voice chat!</i> """, "✨"
+✨ <i>Welcome to the voice chat!</i> """, "✨")
 
-def style_neon(name, username, user_id, total, join_time_iso):(name, username, user_id, total, join_time_iso): return (f"💠 <b>ɴᴇᴏɴ ᴠᴄ ᴀʟᴇʀᴛ</b>
+def style_neon(name, username, user_id, total, join_time_iso): return (f""" 💠 <b>NEON VC ALERT</b>
 
-" f"👤 <b>ɴᴀᴍᴇ:</b> {name} " f"🔗 <b>ᴜsᴇʀɴᴀᴍᴇ:</b> {username} " f"🆔 <b>ɪᴅ:</b> <code>{user_id}</code>
+👤 <b>Name:</b> {name} 🔗 <b>Username:</b> {username} 🆔 <b>ID:</b> <code>{user_id}</code>
 
-" f"👥 <b>Total in VC:</b> <code>{total}</code> " f"🕒 <i>{join_time_iso}</i>
+👥 <b>Total in VC:</b> <code>{total}</code> 🕒 <b>Time:</b> {join_time_iso}
 
-" f"⚡ <i>ʏᴏᴜʀ ᴘʀᴇsᴇɴᴄᴇ ᴍᴀᴋᴇs ᴛʜᴇ ᴠᴄ ʟɪᴠᴇ!</i>", "⚡")
+⚡ <i>Your presence makes the VC shine!</i> """, "⚡")
 
-def style_royal(name, username, user_id, total, join_time_iso): return (f"👑 <b>ʀᴏʏᴀʟ ᴇɴᴛʀʏ ɪɴ ᴠᴄ</b>
+def style_royal(name, username, user_id, total, join_time_iso): return (f""" 👑 <b>ROYAL VC ENTRY</b>
 
-" f"✨ <b>ɴᴀᴍᴇ:</b> {name} " f"📛 <b>ᴜsᴇʀɴᴀᴍᴇ:</b> {username} " f"🆔 <b>ɪᴅ:</b> <code>{user_id}</code>
+✨ <b>Name:</b> {name} 📛 <b>Username:</b> {username} 🆔 <b>ID:</b> <code>{user_id}</code>
 
-" f"👥 <b>Total in VC:</b> <code>{total}</code> " f"🕒 <i>Joined: {join_time_iso}</i>
+👥 <b>Total in VC:</b> <code>{total}</code> 🕒 <b>Joined:</b> {join_time_iso}
 
-" f"💛 <i>ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴛʜᴇ ɢᴏʟᴅᴇɴ ꜱᴜɴᴅ!</i>", "💛")
+💛 <i>Welcome to the golden hall.</i> """, "💛")
 
-def style_anime(name, username, user_id, total, join_time_iso): return (f"🌸 <b>ᴀɴɪᴍᴇ ᴠᴄ ᴇɴᴛʀʏ</b>
+def style_anime(name, username, user_id, total, join_time_iso): return (f""" 🌸 <b>ANIME VC ENTRY</b>
 
-" f"👤 <b>ɴᴀᴍᴇ:</b> {name} " f"🌐 <b>ᴜsᴇʀɴᴀᴍᴇ:</b> {username} " f"🆔 <b>ɪᴅ:</b> <code>{user_id}</code>
+👤 <b>Name:</b> {name} 🌐 <b>Username:</b> {username} 🆔 <b>ID:</b> <code>{user_id}</code>
 
-" f"👥 <b>Total in VC:</b> <code>{total}</code> " f"🕒 <i>{join_time_iso}</i>
+👥 <b>Total in VC:</b> <code>{total}</code> 🕒 <b>Time:</b> {join_time_iso}
 
-" f"💮 <i>ᴋᴏɴɴɪᴄʜɪᴡᴀ~ ᴇɴᴊᴏʏ ᴛʜᴇ ᴠᴄ!</i>", "💮")
+💮 <i>Konnichiwa~ enjoy the VC!</i> """, "💮")
 
-def style_cyber(name, username, user_id, total, join_time_iso): return (f"🧬 <b>ᴄʏʙᴇʀ ᴍᴏᴅᴇ ᴀᴄᴛɪᴠᴀᴛᴇᴅ</b>
+def style_cyber(name, username, user_id, total, join_time_iso): return (f""" 🧬 <b>CYBER MODE ACTIVATED</b>
 
-" f"👤 <b>ᴜꜱᴇʀ:</b> {name} " f"📡 <b>ɴᴇᴛ ᴛᴀɢ:</b> {username} " f"🆔 <b>ᴄᴏᴅᴇ:</b> <code>{user_id}</code>
+👤 <b>User:</b> {name} 📡 <b>Net Tag:</b> {username} 🆔 <b>Code:</b> <code>{user_id}</code>
 
-" f"👥 <b>Total in VC:</b> <code>{total}</code> " f"🕒 <i>{join_time_iso}</i>
+👥 <b>Total in VC:</b> <code>{total}</code> 🕒 <b>Time:</b> {join_time_iso}
 
-" f"⚙️ <i>ᴜꜱᴇʀ ᴄᴏɴɴᴇᴄᴛᴇᴅ ᴛᴏ ᴠᴄ ɴᴇᴛᴡᴏʀᴋ.</i>", "⚙️")
+⚙️ <i>User connected to VC network.</i> """, "⚙️")
 
-def style_dark(name, username, user_id, total, join_time_iso): return (f"🔥 <b>ᴅᴀʀᴋ ꜱᴏᴜʟ ᴇɴᴛᴇʀᴇᴅ ᴠᴄ</b>
+def style_dark(name, username, user_id, total, join_time_iso): return (f""" 🔥 <b>DARK SOUL ENTERED VC</b>
 
-" f"😈 <b>ɴᴀᴍᴇ:</b> {name} " f"🔗 <b>ᴛᴀɢ:</b> {username} " f"🆔 <b>ɪᴅ:</b> <code>{user_id}</code>
+😈 <b>Name:</b> {name} 🔗 <b>Tag:</b> {username} 🆔 <b>ID:</b> <code>{user_id}</code>
 
-" f"👥 <b>Total in VC:</b> <code>{total}</code> " f"🕒 <i>{join_time_iso}</i>
+👥 <b>Total in VC:</b> <code>{total}</code> 🕒 <b>Time:</b> {join_time_iso}
 
-" f"🌑 <i>ᴛʜᴇ ᴠᴄ ɢᴏᴛ ᴅᴀʀᴋᴇʀ...</i>", "🌑")
+🌑 <i>The VC grows darker...</i> """, "🌑")
 
 _STYLE_FUNC = { "premium": style_premium, "neon": style_neon, "royal": style_royal, "anime": style_anime, "cyber": style_cyber, "dark": style_dark, }
 
 -------------------------
 
-Helper: get_group_call_participants (raw)
+Helper — fetch participants (raw)
 
 -------------------------
 
@@ -148,7 +142,7 @@ get_assistant placeholder
 
 -------------------------
 
-async def get_assistant(chat_id: int): """ Return an assistant (userbot) client instance able to call raw functions. Replace this with your project's implementation that returns the appropriate assistant client for the chat. Return None if not available. """ # Example placeholder: if you keep a global assistant named userbot elsewhere, # return it here. For now, try to return app as a fallback (works if app # is a userbot-like client), otherwise return None. try: return app except Exception: return None
+async def get_assistant(chat_id: int): """ Return an assistant (userbot) client instance able to call raw functions. Replace this with your project's implementation that returns the appropriate assistant client for the chat. Return None if not available. """ # TODO: Replace with your own assistant lookup if necessary try: return app except Exception: return None
 
 -------------------------
 
@@ -226,7 +220,6 @@ try:
 
         await asyncio.sleep(2)
 finally:
-    # cleanup
     _monitor_tasks.pop(chat_id, None)
     active_vc_chats.discard(chat_id)
 
@@ -307,8 +300,7 @@ total = max(0, len(vc_active_users.get(chat_id, set())) - 1)
     text, footer = style_func(mention, username, user_id, total, leave_time_iso)
 
     # Modify text to indicate leave
-    text = text.replace("ɴᴇᴡ ᴍᴇᴍʙᴇʀ ᴇɴᴛᴇʀᴇᴅ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ", "ᴍᴇᴍʙᴇʀ ʟᴇꜰᴛ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ")
-    text = text.replace("ᴀᴄᴛɪᴠᴀᴛᴇᴅ", "ʟᴇꜰᴛ")
+    text = text.replace("New Member Joined VC", "Member left the voice chat")
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔍 Profile", url=f"tg://user?id={user_id}")]])
 
@@ -385,7 +377,6 @@ try:
         except Exception:
             continue
     vc_active_users[chat_id] = humans
-    # ensure monitor running when enabled
     task = _monitor_tasks.get(chat_id)
     if is_enabled(chat_id) and (not task or task.done()):
         await check_and_monitor_vc(chat_id)
@@ -400,7 +391,7 @@ Commands
 
 -------------------------
 
-async def _is_group_admin(message: Message) -> bool: """ Reliable admin check using app.get_chat_member. Returns True if sender is admin or creator. """ try: member = await app.get_chat_member(message.chat.id, message.from_user.id) return member.status in ("administrator", "creator") except Exception: # fallback: try local message.chat.get_member try: member = await message.chat.get_member(message.from_user.id) return member.status in ("administrator", "creator") except Exception: return False
+async def _is_group_admin(message: Message) -> bool: """ Reliable admin check using app.get_chat_member. Returns True if sender is admin or creator. """ try: member = await app.get_chat_member(message.chat.id, message.from_user.id) return member.status in ("administrator", "creator") except Exception: try: member = await message.chat.get_member(message.from_user.id) return member.status in ("administrator", "creator") except Exception: return False
 
 @app.on_message(filters.command("vcrefresh") & filters.group) async def vcrefresh_cmd(_, message: Message): if not await _is_group_admin(message): return await message.reply_text("Only group admins can use this command.") await message.reply_text("🔄 Refreshing VC — scanning participants now...") humans = await perform_vc_refresh(message.chat.id) text = "🔄 VC Refreshed Successfully!
 

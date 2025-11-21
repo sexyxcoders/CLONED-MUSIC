@@ -1,18 +1,28 @@
 # ===========================================================
-# vclogger.py — Enhanced VC Logger for NexaMusic
-# Features: enable/disable, human-only, styles, cooldown,
-# total count, join time, inline "Show Full VC List" button
+# vclogger.py — Enhanced VC Logger for NexaMusic (WITH REFRESH)
+# Features:
+#  - /vclogger enable|disable|status|style|cooldown|delete_after|refresh
+#  - /vcrefresh (admin-only)
+#  - human-only logging, styles, cooldown, total count, join time
+#  - inline "Show Full VC List" button (live)
+#  - manual refresh: re-scan participants & restart monitor
 # ===========================================================
 
 import asyncio
 import json
 import random
+import time
 from datetime import datetime, timezone
 from logging import getLogger
 from typing import Dict, Set
 
 from pyrogram import filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import (
+    Message,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    CallbackQuery,
+)
 from pyrogram.raw import functions
 
 from NexaMusic import app
@@ -27,6 +37,7 @@ vc_active_users: Dict[int, Set[int]] = {}
 active_vc_chats: Set[int] = set()
 last_sent_time: Dict[int, float] = {}  # chat_id -> timestamp (cooldown)
 recent_join_times: Dict[int, Dict[int, float]] = {}  # chat_id -> {user_id: join_ts}
+_monitor_tasks: Dict[int, asyncio.Task] = {}  # chat_id -> task (optional handle)
 
 # -------------------------
 # Persistent config (JSON)
@@ -89,8 +100,8 @@ def set_style(chat_id, style_name):
     set_chat_cfg(chat_id, "style", style_name)
 
 # -------------------------
-# Styles (6 styles from earlier)
-# Each style is a function that returns (message_text, footer_emoji)
+# Styles (6 styles)
+# Each returns (message_text, footer_emoji)
 # -------------------------
 def style_premium(name, username, user_id, total, join_time_iso):
     return (f"💫 <b>ɴᴇᴡ ᴍᴇᴍʙᴇʀ ᴇɴᴛᴇʀᴇᴅ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ</b>\n\n"
@@ -178,7 +189,6 @@ async def get_group_call_participants(userbot, peer):
 # -------------------------
 # Cooldown guard
 # -------------------------
-import time
 def can_send_alert(chat_id):
     now = time.time()
     cd = get_cooldown(chat_id)
@@ -196,76 +206,73 @@ async def monitor_vc_chat(chat_id):
     if not userbot:
         return
 
-    # initialize recent join times map for this chat
     recent_join_times.setdefault(chat_id, {})
 
-    while chat_id in active_vc_chats:
-        try:
-            peer = await userbot.resolve_peer(chat_id)
-            participants_list = await get_group_call_participants(userbot, peer)
+    try:
+        while chat_id in active_vc_chats:
+            try:
+                peer = await userbot.resolve_peer(chat_id)
+                participants_list = await get_group_call_participants(userbot, peer)
 
-            # participants may contain ChannelParticipant objects with .peer.user_id
-            new_users = {p.peer.user_id for p in participants_list if hasattr(p, "peer")}
-            old_users = vc_active_users.get(chat_id, set())
+                new_users = {p.peer.user_id for p in participants_list if hasattr(p, "peer")}
+                old_users = vc_active_users.get(chat_id, set())
 
-            joined = new_users - old_users
-            left = old_users - new_users
+                joined = new_users - old_users
+                left = old_users - new_users
 
-            # filter joins: only humans (not bots), skip anonymous (id 0 or None)
-            human_joined = set()
-            for uid in joined:
-                try:
-                    usr = await userbot.get_users(uid)
-                    if getattr(usr, "is_bot", False):
+                # filter joins: only humans (not bots)
+                human_joined = set()
+                for uid in joined:
+                    try:
+                        usr = await userbot.get_users(uid)
+                        if getattr(usr, "is_bot", False):
+                            continue
+                        if not uid:
+                            continue
+                        human_joined.add(uid)
+                    except Exception:
                         continue
-                    # skip tg anonymous (no user id unlikely here), ensure uid valid
-                    if not uid:
+
+                tasks = []
+                for uid in human_joined:
+                    prev = recent_join_times[chat_id].get(uid, 0)
+                    now_ts = time.time()
+                    if now_ts - prev < 3:
                         continue
-                    human_joined.add(uid)
-                except Exception:
-                    # if fetching user failed, skip to be safe
-                    continue
+                    recent_join_times[chat_id][uid] = now_ts
+                    tasks.append(handle_user_join(chat_id, uid, userbot))
 
-            tasks = []
-            # handle joins
-            for uid in human_joined:
-                # anti-spam: if same user just joined within 3 seconds, skip duplicate
-                prev = recent_join_times[chat_id].get(uid, 0)
-                now_ts = time.time()
-                if now_ts - prev < 3:
-                    # probably spam rejoin, skip
-                    continue
-                recent_join_times[chat_id][uid] = now_ts
-                tasks.append(handle_user_join(chat_id, uid, userbot))
-
-            # handle leaves: ensure we only announce human leaves (not bots)
-            human_left = set()
-            for uid in left:
-                try:
-                    usr = await userbot.get_users(uid)
-                    if getattr(usr, "is_bot", False):
+                human_left = set()
+                for uid in left:
+                    try:
+                        usr = await userbot.get_users(uid)
+                        if getattr(usr, "is_bot", False):
+                            continue
+                        human_left.add(uid)
+                    except Exception:
                         continue
-                    human_left.add(uid)
-                except Exception:
-                    continue
 
-            for uid in human_left:
-                tasks.append(handle_user_leave(chat_id, uid, userbot))
+                for uid in human_left:
+                    tasks.append(handle_user_leave(chat_id, uid, userbot))
 
-            if tasks:
-                # respect cooldown: if cannot send, skip scheduling (delays alert)
-                if can_send_alert(chat_id):
-                    await asyncio.gather(*tasks, return_exceptions=True)
-                else:
-                    LOGGER.debug(f"[VCLOGGER] Cooldown active for {chat_id}, skipping immediate alerts.")
+                if tasks:
+                    if can_send_alert(chat_id):
+                        await asyncio.gather(*tasks, return_exceptions=True)
+                    else:
+                        LOGGER.debug(f"[VCLOGGER] Cooldown active for {chat_id}, skipping immediate alerts.")
 
-            vc_active_users[chat_id] = new_users
+                vc_active_users[chat_id] = new_users
 
-        except Exception as e:
-            LOGGER.error(f"[VC LOGGER] Error monitoring {chat_id}: {e}")
+            except Exception as e:
+                LOGGER.error(f"[VC LOGGER] Error in monitor loop for {chat_id}: {e}")
 
-        await asyncio.sleep(2)
-
+            await asyncio.sleep(2)
+    finally:
+        # cleanup on exit
+        if chat_id in _monitor_tasks:
+            _monitor_tasks.pop(chat_id, None)
+        if chat_id in active_vc_chats:
+            active_vc_chats.discard(chat_id)
 
 # -------------------------
 # Start monitor if needed
@@ -281,7 +288,8 @@ async def check_and_monitor_vc(chat_id):
 
         if participants and chat_id not in active_vc_chats and is_enabled(chat_id):
             active_vc_chats.add(chat_id)
-            asyncio.create_task(monitor_vc_chat(chat_id))
+            task = asyncio.create_task(monitor_vc_chat(chat_id))
+            _monitor_tasks[chat_id] = task
 
     except Exception as e:
         LOGGER.error(f"[VC LOGGER] check_and_monitor error for {chat_id}: {e}")
@@ -300,7 +308,6 @@ async def delete_after_delay(msg, delay: int):
 # Format time helper
 # -------------------------
 def iso_local_time():
-    # UTC -> local ISO style time (HH:MM)
     now = datetime.now(timezone.utc).astimezone()
     return now.strftime("%Y-%m-%d %H:%M:%S %Z")
 
@@ -314,10 +321,9 @@ async def handle_user_join(chat_id, user_id, userbot):
         username = f"@{user.username}" if getattr(user, "username", None) else "ɴᴏ ᴜsᴇʀɴᴀᴍᴇ"
         mention = f'<a href="tg://user?id={user_id}">{name}</a>'
 
-        total = len(vc_active_users.get(chat_id, set())) + 1  # approximate after join
+        total = len(vc_active_users.get(chat_id, set())) + 1
         join_time_iso = iso_local_time()
 
-        # pick style: if chat has style configured use it, else random from available
         style = get_style(chat_id)
         if style == "random":
             style = random.choice(list(_STYLE_FUNC.keys()))
@@ -326,18 +332,18 @@ async def handle_user_join(chat_id, user_id, userbot):
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("👥 Show Full VC List", callback_data=f"vclist:{chat_id}")],
+            [InlineKeyboardButton("🔄 Refresh VC", callback_data=f"vcrefresh_cb:{chat_id}")],
             [InlineKeyboardButton("🔍 Profile", url=f"tg://user?id={user_id}")]
         ])
 
         sent = await app.send_message(chat_id, text, reply_markup=keyboard, disable_web_page_preview=True)
-        # auto-delete
         asyncio.create_task(delete_after_delay(sent, get_delete_after(chat_id)))
 
     except Exception as e:
         LOGGER.error(f"[VC LOGGER] Join msg error for {user_id} in {chat_id}: {e}")
 
 # -------------------------
-# Send leave message (similar style)
+# Send leave message
 # -------------------------
 async def handle_user_leave(chat_id, user_id, userbot):
     try:
@@ -349,16 +355,12 @@ async def handle_user_leave(chat_id, user_id, userbot):
         total = max(0, len(vc_active_users.get(chat_id, set())) - 1)
         leave_time_iso = iso_local_time()
 
-        # Use same style as join if set, otherwise 'premium'
         style = get_style(chat_id)
         if style == "random":
             style = random.choice(list(_STYLE_FUNC.keys()))
-        # For leave we reuse style function but tweak header text inside function return
         style_func = _STYLE_FUNC.get(style, style_premium)
-        # call style func with a temporary name; then replace header text for leave
         text, footer = style_func(mention, username, user_id, total, leave_time_iso)
-        # transform heading from join → leave (simple replacement of common join headers)
-        text = text.replace("ɴᴇᴡ ᴍᴇᴍʙᴇʀ ᴇɴᴛᴇʀᴇᴅ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ", "ᴍᴇᴍʙᴇʀ ʟᴇғᴛ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ") \
+        text = text.replace("ɴᴇᴡ ᴍᴇᴍʙᴇʀ ᴇɴᴛᴇʀᴇᴅ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ", "ᴍᴇᴍʙᴇʀ ʟᴇꜰᴛ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ") \
                    .replace("ᴇɴᴛᴇʀᴇᴅ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ", "ʟᴇꜰᴛ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ") \
                    .replace("ɴᴇᴡ ᴍᴇᴍʙᴇʀ ᴊᴏɪɴᴇᴅ ᴠᴄ", "ᴍᴇᴍʙᴇʀ ʟᴇꜰᴛ ᴠᴄ")
 
@@ -373,60 +375,152 @@ async def handle_user_leave(chat_id, user_id, userbot):
         LOGGER.error(f"[VC LOGGER] Leave msg error for {user_id} in {chat_id}: {e}")
 
 # -------------------------
-# Callback: show full VC list
+# Utility: build members list text
 # -------------------------
-@app.on_callback_query(filters.regex(r"^vclist:"))
-async def _vclist_cb(_, cb: CallbackQuery):
+async def build_vc_members_text(chat_id):
+    userbot = await get_assistant(chat_id)
+    if not userbot:
+        return "Assistant not available."
+
     try:
-        await cb.answer()  # ack
-        data = cb.data or ""
-        parts = data.split(":")
-        if len(parts) != 2:
-            return
-        chat_id = int(parts[1])
-
-        # get assistant to fetch latest participants
-        userbot = await get_assistant(chat_id)
-        if not userbot:
-            return await cb.message.reply_text("Assistant not available.")
-
         peer = await userbot.resolve_peer(chat_id)
         participants = await get_group_call_participants(userbot, peer)
-        members = []
+        lines = []
         for p in participants:
             if hasattr(p, "peer"):
                 uid = p.peer.user_id
                 try:
                     usr = await userbot.get_users(uid)
-                    # skip bots and anonymous
                     if getattr(usr, "is_bot", False):
                         continue
-                    display = f"- {usr.first_name or 'ᴜɴᴋɴᴏᴡɴ'}"
+                    name = usr.first_name or "ᴜɴᴋɴᴏᴡɴ"
+                    display = f"- {name}"
                     if getattr(usr, "username", None):
                         display += f" (@{usr.username})"
                     display += f" — <code>{uid}</code>"
-                    members.append(display)
+                    lines.append(display)
                 except Exception:
                     continue
+        if not lines:
+            return "No human participants found in VC."
+        header = f"👥 <b>Current VC Members — {len(lines)}</b>\n\n"
+        return header + "\n".join(lines)
+    except Exception as e:
+        LOGGER.error(f"[VCLOGGER] build_vc_members_text err: {e}")
+        return "Failed to fetch VC participants."
 
-        if not members:
-            text = "No human participants found in VC."
-        else:
-            total = len(members)
-            header = f"👥 <b>Current VC Members — {total}</b>\n\n"
-            text = header + "\n".join(members)
-
-        # reply privately to the callback (edit or send)
+# -------------------------
+# Callback: show full VC list
+# -------------------------
+@app.on_callback_query(filters.regex(r"^vclist:"))
+async def _vclist_cb(_, cb: CallbackQuery):
+    try:
+        await cb.answer()
+        parts = (cb.data or "").split(":")
+        if len(parts) != 2:
+            return
+        chat_id = int(parts[1])
+        text = await build_vc_members_text(chat_id)
+        # try to reply privately first
         try:
             await cb.message.reply_text(text, disable_web_page_preview=True)
         except Exception:
             await cb.edit_message_text(text, disable_web_page_preview=True)
-
     except Exception as e:
         LOGGER.error(f"[VCLOGGER] vclist cb err: {e}")
 
 # -------------------------
-# Command: /vclogger enable|disable (admin-only)
+# Callback: refresh VC (button)
+# -------------------------
+@app.on_callback_query(filters.regex(r"^vcrefresh_cb:"))
+async def _vcrefresh_cb(_, cb: CallbackQuery):
+    try:
+        await cb.answer("Refreshing VC…", show_alert=False)
+        parts = (cb.data or "").split(":")
+        if len(parts) != 2:
+            return
+        chat_id = int(parts[1])
+        # perform refresh
+        await perform_vc_refresh(chat_id)
+        # respond
+        text = await build_vc_members_text(chat_id)
+        await cb.message.reply_text("🔄 VC refreshed.\n\n" + text, disable_web_page_preview=True)
+    except Exception as e:
+        LOGGER.error(f"[VCLOGGER] vcrefresh cb err: {e}")
+
+# -------------------------
+# Manual refresh logic
+# -------------------------
+async def perform_vc_refresh(chat_id):
+    """
+    Force re-scan participants for chat_id, update vc_active_users,
+    restart monitor if necessary. Returns set of current user ids.
+    """
+    userbot = await get_assistant(chat_id)
+    if not userbot:
+        return set()
+
+    try:
+        peer = await userbot.resolve_peer(chat_id)
+        participants = await get_group_call_participants(userbot, peer)
+        new_users = {p.peer.user_id for p in participants if hasattr(p, "peer")}
+        # filter humans
+        humans = set()
+        for uid in new_users:
+            try:
+                usr = await userbot.get_users(uid)
+                if getattr(usr, "is_bot", False):
+                    continue
+                humans.add(uid)
+            except Exception:
+                continue
+        # update internal state
+        vc_active_users[chat_id] = humans
+        # restart monitor if enabled but not running
+        if is_enabled(chat_id) and chat_id not in active_vc_chats:
+            await check_and_monitor_vc(chat_id)
+        # if monitor exists but task done, ensure it's restarted
+        task = _monitor_tasks.get(chat_id)
+        if is_enabled(chat_id) and (not task or task.done()):
+            await check_and_monitor_vc(chat_id)
+        return humans
+    except Exception as e:
+        LOGGER.error(f"[VCLOGGER] perform_vc_refresh error for {chat_id}: {e}")
+        return set()
+
+# -------------------------
+# Command: /vcr e f r e s h  (admin-only) (alias /vclogger refresh)
+# -------------------------
+@app.on_message(filters.command("vcrefresh") & filters.group)
+async def vcrefresh_cmd(_, message: Message):
+    if not await _is_group_admin(message):
+        return await message.reply_text("Only group admins can use this command.")
+    await message.reply_text("🔄 Refreshing VC — scanning participants now...")
+    humans = await perform_vc_refresh(message.chat.id)
+    text = "🔄 VC Refreshed Successfully!\n\n"
+    if not humans:
+        text += "No human participants found in VC."
+    else:
+        text += f"Current Members ({len(humans)}):\n"
+        # fetch names for pretty list
+        entries = []
+        userbot = await get_assistant(message.chat.id)
+        if userbot:
+            for uid in humans:
+                try:
+                    usr = await userbot.get_users(uid)
+                    nm = usr.first_name or "ᴜɴᴋɴᴏᴡɴ"
+                    if getattr(usr, "username", None):
+                        entries.append(f"• {nm} (@{usr.username})")
+                    else:
+                        entries.append(f"• {nm} — <code>{uid}</code>")
+                except Exception:
+                    entries.append(f"• <code>{uid}</code>")
+        text += "\n".join(entries)
+    await message.reply_text(text, disable_web_page_preview=True)
+
+# -------------------------
+# /vclogger commands (admin-only)
 # -------------------------
 async def _is_group_admin(message: Message):
     try:
@@ -437,19 +531,21 @@ async def _is_group_admin(message: Message):
 
 @app.on_message(filters.command("vclogger") & filters.group)
 async def vclogger_cmd(_, message: Message):
-    # usage: /vclogger enable OR /vclogger disable OR /vclogger style <name|random> OR /vclogger status
+    # usage: /vclogger enable|disable|status|style|cooldown|delete_after|refresh
     if not await _is_group_admin(message):
         return await message.reply_text("Only group admins can use this command.")
 
     args = message.text.strip().split()
     if len(args) < 2:
-        return await message.reply_text("Usage:\n/vclogger enable|disable|status|style <name|random>\nAvailable styles: premium, neon, royal, anime, cyber, dark, random")
+        return await message.reply_text(
+            "Usage:\n/vclogger enable|disable|status|style <name|random>|cooldown <sec>|delete_after <sec>|refresh\n"
+            "Available styles: premium, neon, royal, anime, cyber, dark, random"
+        )
 
     action = args[1].lower()
 
     if action == "enable":
         enable_logger(message.chat.id)
-        # start monitoring immediately
         asyncio.create_task(check_and_monitor_vc(message.chat.id))
         return await message.reply_text("✅ Voice chat logger enabled for this group.")
 
@@ -457,6 +553,13 @@ async def vclogger_cmd(_, message: Message):
         disable_logger(message.chat.id)
         if message.chat.id in active_vc_chats:
             active_vc_chats.discard(message.chat.id)
+        # cancel monitor task if exists
+        task = _monitor_tasks.get(message.chat.id)
+        if task and not task.done():
+            try:
+                task.cancel()
+            except Exception:
+                pass
         return await message.reply_text("❌ Voice chat logger disabled for this group.")
 
     if action == "status":
@@ -475,7 +578,6 @@ async def vclogger_cmd(_, message: Message):
         set_style(message.chat.id, style_name)
         return await message.reply_text(f"✅ VC message style set to: {style_name}")
 
-    # optional: set cooldown/delete_after
     if action == "cooldown" and len(args) >= 3:
         try:
             val = float(args[2])
@@ -492,10 +594,36 @@ async def vclogger_cmd(_, message: Message):
         except Exception:
             return await message.reply_text("Invalid delete_after value.")
 
+    if action == "refresh":
+        # same as /vcrefresh
+        await message.reply_text("🔄 Refreshing VC — scanning participants now...")
+        humans = await perform_vc_refresh(message.chat.id)
+        text = "🔄 VC Refreshed Successfully!\n\n"
+        if not humans:
+            text += "No human participants found in VC."
+        else:
+            text += f"Current Members ({len(humans)}):\n"
+            entries = []
+            userbot = await get_assistant(message.chat.id)
+            if userbot:
+                for uid in humans:
+                    try:
+                        usr = await userbot.get_users(uid)
+                        nm = usr.first_name or "ᴜɴᴋɴᴏᴡɴ"
+                        if getattr(usr, "username", None):
+                            entries.append(f"• {nm} (@{usr.username})")
+                        else:
+                            entries.append(f"• {nm} — <code>{uid}</code>")
+                    except Exception:
+                        entries.append(f"• <code>{uid}</code>")
+            text += "\n".join(entries)
+        await message.reply_text(text, disable_web_page_preview=True)
+        return
+
     return await message.reply_text("Unknown vclogger command option.")
 
 # -------------------------
-# Optional: start monitoring for chats in config on bot start
+# Optional: start monitors for enabled chats at startup
 # -------------------------
 async def start_monitors_from_config():
     try:
@@ -509,5 +637,5 @@ async def start_monitors_from_config():
     except Exception as e:
         LOGGER.error(f"[VCLOGGER] start monitors err: {e}")
 
-# call on startup
+# kick off startup monitors (no await)
 asyncio.create_task(start_monitors_from_config())

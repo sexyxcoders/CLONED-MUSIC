@@ -84,15 +84,15 @@ Style functions
 
 -------------------------
 
-def style_premium(name, username, user_id, total, join_time_iso): return (f"💫 <b>ɴᴇᴡ ᴍᴇᴍʙᴇʀ ᴇɴᴛᴇʀᴇᴅ ᴛʜᴇ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ</b>
+def style_premium(name, username, user_id, total, join_time_iso): return f""" 💫 <b>New Member Joined VC</b>
 
-" f"👤 <b>ᴘʀᴏғɪʟᴇ:</b> {name} " f"🔗 <b>ᴜsᴇʀɴᴀᴍᴇ:</b> {username} " f"🆔 <b>ɪᴅ:</b> <code>{user_id}</code>
+👤 <b>Name:</b> {name} 🔗 <b>Username:</b> {username} 🆔 <b>ID:</b> <code>{user_id}</code>
 
-" f"👥 <b>Total in VC:</b> <code>{total}</code> " f"🕒 <i>Joined at: {join_time_iso}</i>
+👥 <b>Total in VC:</b> <code>{total}</code> 🕒 <b>Join Time:</b> {join_time_iso}
 
-" f"✨ <i>ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴛʜᴇ ᴠɪʙᴇs — ᴇɴᴊᴏʏ ᴛʜᴇ ᴠᴄ!</i>", "✨")
+✨ <i>Welcome to the voice chat!</i> """, "✨"
 
-def style_neon(name, username, user_id, total, join_time_iso): return (f"💠 <b>ɴᴇᴏɴ ᴠᴄ ᴀʟᴇʀᴛ</b>
+def style_neon(name, username, user_id, total, join_time_iso):(name, username, user_id, total, join_time_iso): return (f"💠 <b>ɴᴇᴏɴ ᴠᴄ ᴀʟᴇʀᴛ</b>
 
 " f"👤 <b>ɴᴀᴍᴇ:</b> {name} " f"🔗 <b>ᴜsᴇʀɴᴀᴍᴇ:</b> {username} " f"🆔 <b>ɪᴅ:</b> <code>{user_id}</code>
 

@@ -6,7 +6,7 @@ from Clonify import app
 
 #--------------------------
 
-MUST_JOIN = "TechNodeCoders"
+MUST_JOIN = "NexaCoders"
 
 #--------------------------
 

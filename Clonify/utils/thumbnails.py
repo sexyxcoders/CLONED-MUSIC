@@ -182,8 +182,8 @@ class ThumbnailGenerator:
 
 def get_thumb(
     album_art_path: str,
-    song_title: str,
-    artist_name: str,
+    song_title: str = "Unknown Title",
+    artist_name: str = "Unknown Artist",
     album: str = "Airdopes 131",
     current_seconds: int = 141,
     total_seconds: int = 281,

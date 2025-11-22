@@ -1,10 +1,10 @@
 import os from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 
---------------------------- CONFIG ---------------------------
+#--------------------------- CONFIG ---------------------------
 
 CANVAS = (1280, 720) RADIUS = 55 BG_COLOR = (86, 20, 18) WIDGET_COLOR = (44, 10, 10) RED_TINT = (170, 0, 0) TITLE_COLOR = (255, 255, 255) ARTIST_COLOR = (215, 205, 200) ALBUM_COLOR = (220, 190, 165) PROG_BG = (95, 38, 34) PROG_FG = (255, 200, 192) ICON_COLOR = (255, 255, 255)
 
---------------------------- HELPERS ---------------------------
+#--------------------------- HELPERS ---------------------------
 
 def load_font(size, bold=False): paths = [ "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "./fonts/DejaVuSans.ttf", "./fonts/Arial.ttf", ] for p in paths: if os.path.isfile(p): try: return ImageFont.truetype(p, size) except: pass return ImageFont.load_default()
 
@@ -14,7 +14,7 @@ def tint(img, color=RED_TINT, strength=0.7): overlay = Image.new("RGB", img.size
 
 def mmss(sec): sec = max(0, int(sec)) return f"{sec//60}:{sec%60:02d}"
 
---------------------------- CORE RENDER ---------------------------
+#--------------------------- CORE RENDER ---------------------------
 
 def render_style_b( album_art, song_title, artist_name, album_label, current_seconds, total_seconds, output, ): canvas = Image.new("RGB", CANVAS, BG_COLOR)
 
@@ -81,7 +81,7 @@ draw.text((bx + bar_w - 80, cy), "-" + mmss(total_seconds), font=f_time, fill=AR
 canvas.save(output, quality=95)
 return output
 
---------------------------- PUBLIC API ---------------------------
+#--------------------------- PUBLIC API ---------------------------
 
 def generate_thumbnail( style="B", album_art_path=None, song_title="Unknown Title", artist_name="Unknown Artist", album_label="Airdopes 131", current_seconds=0, total_seconds=200, output_path="thumbnail.png", ): if album_art_path and os.path.isfile(album_art_path): img = Image.open(album_art_path).convert("RGB") else: img = Image.new("RGB", (430, 500), (80, 20, 20))
 

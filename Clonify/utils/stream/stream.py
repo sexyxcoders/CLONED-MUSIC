@@ -15,23 +15,94 @@ from Clonify.utils.stream.queue import put_queue, put_queue_index
 from Clonify.utils.pastebin import PROBin
 from Clonify.utils.thumbnails import get_thumb
 
-
 # ------------------------------
-# Thumbnail Generator
+# Thumbnail Generator (safe)
 # ------------------------------
-def generate_thumbnail(vidid: str, title="Unknown", artist="Unknown") -> str:
+def safe_generate_thumbnail(vidid: str, title="Unknown", artist="Unknown", provider_thumb: str = None) -> str:
     """
     Generate a thumbnail synchronously and return the file path.
-    Fallbacks to default image if album art is missing.
+    If thumbnail generation fails, return the best available fallback:
+      1) provider_thumb (if provided and exists)
+      2) config.TELEGRAM_AUDIO_URL or config.SOUNCLOUD_IMG_URL or config.STREAM_IMG_URL (if available)
+      3) './downloads/default.jpg' (local fallback)
     """
-    os.makedirs("./thumbnails", exist_ok=True)
-    album_art_path = f"./downloads/{vidid}.jpg"
-    if not os.path.isfile(album_art_path):
-        album_art_path = "./downloads/default.jpg"
-    output_path = f"./thumbnails/{vidid}.png"
-    get_thumb(album_art_path, song_title=title, artist_name=artist, output_path=output_path)
-    return output_path
+    try:
+        os.makedirs("./thumbnails", exist_ok=True)
+        album_art_path = f"./downloads/{vidid}.jpg"
+        if not os.path.isfile(album_art_path):
+            # fallback to downloads default (keep as local fallback)
+            album_art_path = "./downloads/default.jpg"
+        output_path = f"./thumbnails/{vidid}.png"
 
+        # call existing wrapper get_thumb() from thumbnails.py
+        # signature: get_thumb(album_art_path, song_title=..., artist_name=..., output_path=..., style="A", reference_image=None)
+        try:
+            # attempt to create thumbnail file
+            ret = get_thumb(
+                album_art_path,
+                song_title=title,
+                artist_name=artist,
+                output_path=output_path,
+                style="A"
+            )
+            # get_thumb in your thumbnails should return the path; otherwise use output_path
+            result_path = ret if isinstance(ret, str) else output_path
+        except Exception as e:
+            # swallowed so stream doesn't fail — log and continue to fallback
+            print(f"[thumbnail] get_thumb() raised: {e}")
+            result_path = None
+
+        # verify output exists
+        if result_path and os.path.isfile(result_path):
+            return result_path
+
+    except Exception as e:
+        # any filesystem error; print for debugging and continue to fallback
+        print(f"[thumbnail] unexpected error creating thumbnail: {e}")
+
+    # FALLBACK CHAIN (ensure we return an existing path or a URL)
+    # 1) provider thumbnail (a URL or local path passed by youtube/soundcloud)
+    if provider_thumb:
+        # if it's a local file path and exists, return it
+        if os.path.isfile(provider_thumb):
+            return provider_thumb
+        # if it's a URL, return it (pyrogram send_photo accepts URL)
+        if provider_thumb.startswith("http://") or provider_thumb.startswith("https://"):
+            return provider_thumb
+
+    # 2) configured fallback images from config (try several candidates)
+    for candidate in (
+        getattr(config, "TELEGRAM_AUDIO_URL", None),
+        getattr(config, "SOUNCLOUD_IMG_URL", None),
+        getattr(config, "STREAM_IMG_URL", None),
+        getattr(config, "TELEGRAM_VIDEO_URL", None),
+        getattr(config, "SUPPORT_CHAT", None),
+    ):
+        if not candidate:
+            continue
+        # local file?
+        if isinstance(candidate, str) and os.path.isfile(candidate):
+            return candidate
+        # url?
+        if isinstance(candidate, str) and (candidate.startswith("http://") or candidate.startswith("https://")):
+            return candidate
+
+    # 3) local default placeholder (ensure it exists; otherwise create a tiny placeholder)
+    local_default = "./downloads/default.jpg"
+    if os.path.isfile(local_default):
+        return local_default
+
+    # last resort: create a tiny red image and return its path
+    try:
+        from PIL import Image
+        tiny_path = "./thumbnails/fallback_default.png"
+        if not os.path.isfile(tiny_path):
+            Image.new("RGB", (640, 360), (44, 9, 8)).save(tiny_path)
+        return tiny_path
+    except Exception as e:
+        # if pillow isn't available, return a plain string; caller (app.send_photo) will likely fail but we tried
+        print(f"[thumbnail] failed to create tiny fallback image: {e}")
+        return "./downloads/default.jpg"
 
 # ------------------------------
 # Main Stream Function
@@ -69,7 +140,7 @@ async def stream(
                 title, duration_min, duration_sec, thumbnail, vidid = await YouTube.details(
                     search, False if spotify else True
                 )
-            except:
+            except Exception:
                 continue
 
             if duration_sec is None or duration_sec > config.DURATION_LIMIT:
@@ -91,7 +162,7 @@ async def stream(
                     file_path, direct = await YouTube.download(
                         vidid, mystic, video=True if video else None, videoid=True
                     )
-                except:
+                except Exception:
                     raise AssistantErr(_["play_14"])
 
                 await PRO.join_call(
@@ -106,19 +177,23 @@ async def stream(
                     forceplay=forceplay
                 )
 
-                img = generate_thumbnail(vidid, title, user_name)
+                img = safe_generate_thumbnail(vidid, title, user_name, provider_thumb=thumbnail)
                 button = stream_markup(_, chat_id)
-                run = await app.send_photo(
-                    original_chat_id,
-                    photo=img,
-                    caption=_["stream_1"].format(
-                        f"https://t.me/{app.username}?start=info_{vidid}",
-                        title[:23], duration_min, user_name
-                    ),
-                    reply_markup=InlineKeyboardMarkup(button)
-                )
-                db[chat_id][0]["mystic"] = run
-                db[chat_id][0]["markup"] = "stream"
+                try:
+                    run = await app.send_photo(
+                        original_chat_id,
+                        photo=img,
+                        caption=_["stream_1"].format(
+                            f"https://t.me/{app.username}?start=info_{vidid}",
+                            title[:23], duration_min, user_name
+                        ),
+                        reply_markup=InlineKeyboardMarkup(button)
+                    )
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "stream"
+                except Exception as e:
+                    print(f"[stream][playlist] failed to send photo: {e}")
+                    # still keep queue updated — do not raise
 
         if count == 0:
             return
@@ -150,7 +225,7 @@ async def stream(
             file_path, direct = await YouTube.download(
                 vidid, mystic, videoid=True, video=status
             )
-        except:
+        except Exception:
             raise AssistantErr(_["play_14"])
 
         if await is_active_chat(chat_id):
@@ -182,19 +257,34 @@ async def stream(
                 forceplay=forceplay
             )
 
-            img = generate_thumbnail(vidid, title, user_name)
+            img = safe_generate_thumbnail(vidid, title, user_name, provider_thumb=thumbnail)
             button = stream_markup(_, chat_id)
-            run = await app.send_photo(
-                original_chat_id,
-                photo=img,
-                caption=_["stream_1"].format(
-                    f"https://t.me/{app.username}?start=info_{vidid}",
-                    title[:23], duration_min, user_name
-                ),
-                reply_markup=InlineKeyboardMarkup(button)
-            )
-            db[chat_id][0]["mystic"] = run
-            db[chat_id][0]["markup"] = "stream"
+            try:
+                run = await app.send_photo(
+                    original_chat_id,
+                    photo=img,
+                    caption=_["stream_1"].format(
+                        f"https://t.me/{app.username}?start=info_{vidid}",
+                        title[:23], duration_min, user_name
+                    ),
+                    reply_markup=InlineKeyboardMarkup(button)
+                )
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "stream"
+            except Exception as e:
+                print(f"[stream][youtube] failed to send photo: {e}")
+                # fallback: try sending provider thumbnail if different
+                if thumbnail and thumbnail != img:
+                    try:
+                        run = await app.send_photo(original_chat_id, photo=thumbnail,
+                                                   caption=_["stream_1"].format(
+                                                       f"https://t.me/{app.username}?start=info_{vidid}",
+                                                       title[:23], duration_min, user_name
+                                                   ), reply_markup=InlineKeyboardMarkup(button))
+                        db[chat_id][0]["mystic"] = run
+                        db[chat_id][0]["markup"] = "stream"
+                    except Exception as e2:
+                        print(f"[stream][youtube] provider thumbnail also failed: {e2}")
 
     # --------------------------
     # SoundCloud
@@ -226,14 +316,19 @@ async def stream(
                 forceplay=forceplay
             )
             button = stream_markup(_, chat_id)
-            run = await app.send_photo(
-                original_chat_id,
-                photo=config.SOUNCLOUD_IMG_URL,
-                caption=_["stream_1"].format(config.SUPPORT_CHAT, title[:23], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button)
-            )
-            db[chat_id][0]["mystic"] = run
-            db[chat_id][0]["markup"] = "tg"
+            # use configured soundcloud image (URL) or fallback
+            img_to_send = getattr(config, "SOUNCLOUD_IMG_URL", None) or safe_generate_thumbnail("sc_"+str(randint(10000,99999)), title, user_name)
+            try:
+                run = await app.send_photo(
+                    original_chat_id,
+                    photo=img_to_send,
+                    caption=_["stream_1"].format(config.SUPPORT_CHAT, title[:23], duration_min, user_name),
+                    reply_markup=InlineKeyboardMarkup(button)
+                )
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "tg"
+            except Exception as e:
+                print(f"[stream][soundcloud] failed to send photo: {e}")
 
     # --------------------------
     # Telegram
@@ -271,14 +366,18 @@ async def stream(
             if video:
                 await add_active_video_chat(chat_id)
             button = stream_markup(_, chat_id)
-            run = await app.send_photo(
-                original_chat_id,
-                photo=config.TELEGRAM_VIDEO_URL if video else config.TELEGRAM_AUDIO_URL,
-                caption=_["stream_1"].format(link, title[:23], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button)
-            )
-            db[chat_id][0]["mystic"] = run
-            db[chat_id][0]["markup"] = "tg"
+            img_to_send = config.TELEGRAM_VIDEO_URL if video else config.TELEGRAM_AUDIO_URL
+            try:
+                run = await app.send_photo(
+                    original_chat_id,
+                    photo=img_to_send,
+                    caption=_["stream_1"].format(link, title[:23], duration_min, user_name),
+                    reply_markup=InlineKeyboardMarkup(button)
+                )
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "tg"
+            except Exception as e:
+                print(f"[stream][telegram] failed to send photo: {e}")
 
     # --------------------------
     # Live YouTube
@@ -320,19 +419,22 @@ async def stream(
                 "video" if video else "audio",
                 forceplay=forceplay
             )
-            img = generate_thumbnail(vidid, title, user_name)
+            img = safe_generate_thumbnail(vidid, title, user_name, provider_thumb=thumbnail)
             button = stream_markup(_, chat_id)
-            run = await app.send_photo(
-                original_chat_id,
-                photo=img,
-                caption=_["stream_1"].format(
-                    f"https://t.me/{app.username}?start=info_{vidid}",
-                    title[:23], duration_min, user_name
-                ),
-                reply_markup=InlineKeyboardMarkup(button)
-            )
-            db[chat_id][0]["mystic"] = run
-            db[chat_id][0]["markup"] = "tg"
+            try:
+                run = await app.send_photo(
+                    original_chat_id,
+                    photo=img,
+                    caption=_["stream_1"].format(
+                        f"https://t.me/{app.username}?start=info_{vidid}",
+                        title[:23], duration_min, user_name
+                    ),
+                    reply_markup=InlineKeyboardMarkup(button)
+                )
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "tg"
+            except Exception as e:
+                print(f"[stream][live] failed to send photo: {e}")
 
     # --------------------------
     # Index / m3u8

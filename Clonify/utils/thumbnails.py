@@ -11,6 +11,7 @@ Includes backward compatibility for older code that imports:
 
 from PIL import Image, ImageDraw, ImageFont
 from typing import Optional
+import os
 
 
 class ThumbnailGenerator:
@@ -42,7 +43,10 @@ class ThumbnailGenerator:
         return img
 
     def resize_album_art(self, path: str, size: int = 350) -> Optional[Image.Image]:
-        """Load and resize album artwork."""
+        """Load and resize album artwork. Returns None if file doesn't exist."""
+        if not os.path.isfile(path):
+            print(f"[ThumbnailGenerator] Album art not found: {path}")
+            return None
         try:
             img = Image.open(path).convert("RGB")
             img.thumbnail((size, size), Image.Resampling.LANCZOS)
@@ -128,10 +132,8 @@ class ThumbnailGenerator:
         y = 120
 
         draw.text((x, y), album, font=font_album, fill=(200, 150, 120))
-
         y += 50
         draw.text((x, y), song_title, font=font_title, fill=(255, 255, 255))
-
         y += 70
         draw.text((x, y), artist_name, font=font_artist, fill=(200, 200, 200))
 
@@ -139,7 +141,6 @@ class ThumbnailGenerator:
         y += 80
         bar_width = 600
         bar_height = 8
-
         draw.rectangle((x, y, x + bar_width, y + bar_height), fill=(80, 50, 40))
         draw.rectangle((x, y, x + int(bar_width * progress), y + bar_height),
                        fill=(255, 100, 50))
@@ -150,10 +151,9 @@ class ThumbnailGenerator:
         draw.text((x + bar_width - 60, y), "-" + total_time, font=font_time,
                   fill=(200, 200, 200))
 
-        # Playback controls (ASCII only)
+        # Playback controls
         control_y = y + 80
         controls = ["<<", "||", ">>", "VOL"]
-
         for index, label in enumerate(controls):
             draw.text((x + 100 + index * 80, control_y), label,
                       font=font_control, fill=(255, 255, 255))
@@ -163,16 +163,14 @@ class ThumbnailGenerator:
         vol_y = control_y + 100
         vol_width = 500
         vol_height = 6
-
         draw.rectangle((vol_x, vol_y, vol_x + vol_width, vol_y + vol_height),
                        fill=(80, 50, 40))
         draw.rectangle((vol_x, vol_y, vol_x + int(vol_width * 0.7),
                         vol_y + vol_height), fill=(255, 100, 50))
 
-        # Save file
+        # Save thumbnail
         base.save(output_path, quality=95)
         print("[ThumbnailGenerator] Saved thumbnail:", output_path)
-
         return output_path
 
 
@@ -189,7 +187,10 @@ def get_thumb(
     total_seconds: int = 281,
     output_path: str = "thumbnail.png"
 ) -> str:
-    """Compatibility wrapper for old codebases."""
+    """
+    Synchronous thumbnail generator.
+    Compatible with old code calling get_thumb() with only album_art_path.
+    """
     gen = ThumbnailGenerator()
     return gen.create_thumbnail(
         album_art_path=album_art_path,

@@ -21,17 +21,17 @@ import math
 # BASE DIMENSIONS (match screenshot)
 # ---------------------------
 CANVAS = (1500, 800)           # overall image size
-WIDGET = (1450, 650)          # inner rounded card size
+WIDGET = (1400, 625)          # inner rounded card size
 WIDGET_POS = (25, 75)         # widget top-left on canvas
 RADIUS = 70                   # widget corner radius
-ART_SIZE = (630, 650)         # left album art area (exact from screenshot)
+ART_SIZE = (620, 630)         # left album art area (exact from screenshot)
 
 # ---------------------------
 # DEFAULT COLORS (sampled approximate)
 # They will be overridden if a reference image is provided
 # ---------------------------
-BG_COLOR = (87, 26, 20)
-WIDGET_COLOR = (44, 9, 8)
+BG_COLOR = (70, 22, 19)
+WIDGET_COLOR = (40, 7, 7)
 RED_TINT = (180, 0, 0)
 TITLE_COLOR = (255, 255, 255)
 ARTIST_COLOR = (215, 205, 200)

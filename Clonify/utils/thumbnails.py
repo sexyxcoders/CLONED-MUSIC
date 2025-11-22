@@ -16,8 +16,8 @@ import os
 
 # --------------------------- CONFIG ---------------------------
 CANVAS = (1280, 720)
-WIDGET = (1100, 500)
-ART_SIZE = (520, 600)
+WIDGET = (1200, 600)
+ART_SIZE = (430, 500)
 RADIUS = 55
 WIDGET_POS = (90, 110)
 

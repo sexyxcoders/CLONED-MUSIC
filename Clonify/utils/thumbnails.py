@@ -1,53 +1,48 @@
 """
-exact_music_thumbnail.py
-Creates a pixel-accurate music widget thumbnail similar to the screenshots provided.
+music_player_thumbnail_b.py
+Generates a pixel-accurate 'Full Album Photo Player' thumbnail (Style B).
 
-Usage:
-    from exact_music_thumbnail import get_thumb
+Usage example:
+    from music_player_thumbnail_b import get_thumb
     get_thumb(
-        album_art_path="cover.jpg",
+        album_art_path="cover.jpg",        # supply your album art path
         song_title="Salvatore",
         artist_name="Lana Del Rey",
-        album="Airdopes 131",
+        album_label="Airdopes 131",
         current_seconds=141,
         total_seconds=260,
-        output_path="out.png",
-        canvas_size=(1280,720)
+        output_path="out_b.png"
     )
-
-If album_art_path doesn't exist, a placeholder is generated so you can test layout.
 """
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
-import os
-import math
-import textwrap
+import os, math
 
-# ---------- Configuration ----------
-DEFAULT_CANVAS = (1280, 720)
-WIDGET_SIZE = (1100, 500)        # width, height of the rounded card similar to screenshot
-WIDGET_OFFSET = (90, 110)        # where the widget sits on the canvas
-ART_SIZE = (430, 500)            # left artwork size (w,h)
-ROUNDS = 50                      # corner radius for widget and art
-BG_COLOR = (95, 22, 17)          # page background (dark red)
-WIDGET_COLOR = (55, 12, 12)      # inner widget (slightly lighter)
-RED_OVERLAY = (180, 0, 0)        # overlay color to tint album art
-ICON_COLOR = (255, 255, 255)     # white icons/text
-PROG_BG = (100, 48, 42)          # progress bar background
-PROG_FG = (255, 200, 190)        # progress foreground (light pink)
-TIME_COLOR = (235, 230, 230)     # time text color
-ALBUM_COLOR = (220, 180, 160)    # small album label color
-# -----------------------------------
+# -------------------- Config --------------------
+CANVAS = (1280, 720)
+WIDGET = (1100, 500)        # width,height of the rounded card
+WIDGET_POS = (90, 110)      # top-left of the widget on canvas
+ART_SIZE = (430, 500)       # left album area size
+RADIUS = 55                 # corner radius for widget and art
+BG_COLOR = (86, 20, 18)     # page background
+WIDGET_COLOR = (44, 10, 10) # inner widget color (slightly lighter/darker)
+RED_TINT = (170, 0, 0)      # red overlay for album art
+ALBUM_COLOR = (220, 190, 165)
+TITLE_COLOR = (255, 255, 255)
+ARTIST_COLOR = (215, 205, 200)
+PROG_BG = (95, 38, 34)
+PROG_FG = (255, 200, 192)
+ICON_COLOR = (255, 255, 255)
+# -------------------------------------------------
 
 def load_font(size, bold=False):
-    # try some common fonts; fallback to default.
-    candidate_paths = [
+    candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "./fonts/DejaVuSans-Bold.ttf" if bold else "./fonts/DejaVuSans.ttf",
-        "./fonts/arialbd.ttf" if bold else "./fonts/arial.ttf"
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "./fonts/DejaVuSans.ttf",
+        "./fonts/Arial.ttf"
     ]
-    for p in candidate_paths:
+    for p in candidates:
         if p and os.path.isfile(p):
             try:
                 return ImageFont.truetype(p, size)
@@ -55,247 +50,226 @@ def load_font(size, bold=False):
                 pass
     return ImageFont.load_default()
 
-def rounded_rectangle_mask(size, radius):
-    w, h = size
-    mask = Image.new("L", (w, h), 0)
-    draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle((0, 0, w, h), radius=radius, fill=255)
-    return mask
+def rounded_mask(size, r):
+    w,h = size
+    m = Image.new("L",(w,h),0)
+    d = ImageDraw.Draw(m)
+    d.rounded_rectangle((0,0,w,h), radius=r, fill=255)
+    return m
 
-def tint_red(img, strength=0.62):
-    """Blend a red overlay to reproduce the mono red look."""
-    red = Image.new("RGB", img.size, RED_OVERLAY)
+def tint_image(img, tint=RED_TINT, strength=0.66):
+    red = Image.new("RGB", img.size, tint)
     return Image.blend(img.convert("RGB"), red, strength)
 
-def generate_placeholder_art(size):
-    """Create a simple placeholder album art (so you can test without providing an image)."""
-    w, h = size
-    img = Image.new("RGB", (w, h), (50, 20, 20))
+def placeholder_art(size):
+    w,h = size
+    img = Image.new("RGB", (w,h), (40,10,10))
     draw = ImageDraw.Draw(img)
-    # simple gradient
+    # vertical gradient
     for y in range(h):
-        t = y / h
-        r = int(40 + (180 - 40) * t)
-        g = int(10 + (20 - 10) * (1 - t))
-        b = int(10 + (40 - 10) * (1 - t))
-        draw.line((0, y, w, y), fill=(r, g, b))
-    # a soft elliptical highlight
-    ellipse = Image.new("L", (w, h), 0)
-    ed = ImageDraw.Draw(ellipse)
-    ed.ellipse((int(w*0.15), int(h*0.05), int(w*0.9), int(h*0.9)), fill=120)
-    blur = ellipse.filter(ImageFilter.GaussianBlur(30))
+        t = y/h
+        r = int(30 + (200-30)*t)
+        g = int(10 + (10-10)*(1-t))
+        b = int(10 + (20-10)*(1-t))
+        draw.line((0,y,w,y), fill=(r,g,b))
+    # rounded vignette
+    vign = Image.new("L",(w,h),0)
+    dv = ImageDraw.Draw(vign)
+    dv.ellipse((-int(w*0.1), -int(h*0.2), int(w*1.1), int(h*1.2)), fill=180)
+    vign = vign.filter(ImageFilter.GaussianBlur(60))
     img.putalpha(255)
-    red = Image.new("RGBA", img.size, (255, 0, 0, 30))
-    img = Image.alpha_composite(img.convert("RGBA"), red)
-    return img.convert("RGB")
+    red = Image.new("RGBA", img.size, (255,0,0,40))
+    img = Image.alpha_composite(img.convert("RGBA"), red).convert("RGB")
+    return img
 
-def draw_controls(draw, top_left_x, top_left_y, spacing=110):
-    """Draw play control icons centered area — uses simple polygon shapes so no emoji font needed."""
-    # We'll draw three items: prev (triangle-left pair), pause (two bars), next (triangle-right pair), and speaker icon to right.
-    # prev
-    px = top_left_x
-    py = top_left_y
-    # left double triangles (prev)
-    tri_size = 34
+def mmss(sec):
+    s = max(0,int(sec))
+    return f"{s//60}:{s%60:02d}"
+
+def draw_controls(draw, cx, cy):
+    """Draw prev, pause, next, and speaker icon centered around (cx,cy)."""
+    # prev (double triangle left)
+    t = 34
     gap = 12
-    # left triangle
-    draw.polygon([(px, py+tri_size),(px+tri_size, py+tri_size*0.5),(px, py)], fill=ICON_COLOR)
-    # second left triangle offset
-    draw.polygon([(px+tri_size+6, py+tri_size),(px+tri_size*2+6, py+tri_size*0.5),(px+tri_size+6, py)], fill=ICON_COLOR)
+    left_x = cx - 220
+    y = cy
+    # first left triangle
+    draw.polygon([(left_x, y+t),(left_x+t, y+t/2),(left_x, y)], fill=ICON_COLOR)
+    # second left triangle (offset)
+    draw.polygon([(left_x+t+8, y+t),(left_x+t*2+8, y+t/2),(left_x+t+8, y)], fill=ICON_COLOR)
 
-    # pause in middle
-    px2 = px + spacing
-    wbar = 18
-    hbar = 50
-    draw.rectangle((px2 - 18, py, px2 - 2, py + hbar), fill=ICON_COLOR)
-    draw.rectangle((px2 + 2, py, px2 + 18, py + hbar), fill=ICON_COLOR)
+    # pause (two rects)
+    px = cx - 30
+    draw.rectangle((px-22, y-28, px-6, y+28), fill=ICON_COLOR)
+    draw.rectangle((px+6, y-28, px+22, y+28), fill=ICON_COLOR)
 
-    # next triangles (mirror of prev)
-    px3 = px2 + spacing
-    draw.polygon([(px3, py),(px3+tri_size, py+tri_size*0.5),(px3, py+tri_size)], fill=ICON_COLOR)
-    draw.polygon([(px3+tri_size+6, py),(px3+tri_size*2+6, py+tri_size*0.5),(px3+tri_size+6, py+tri_size)], fill=ICON_COLOR)
+    # next (double triangle right)
+    nx = cx + 120
+    draw.polygon([(nx, y),(nx+t, y+t/2),(nx, y+t)], fill=ICON_COLOR)
+    draw.polygon([(nx+t+8, y),(nx+t*2+8, y+t/2),(nx+t+8, y+t)], fill=ICON_COLOR)
 
-    # speaker icon at right of controls (simple speaker + waves)
-    spx = px3 + spacing + 80
-    spy = py + 6
-    # speaker base
-    draw.polygon([(spx, spy+10), (spx+18, spy), (spx+18, spy+50), (spx, spy+40)], fill=ICON_COLOR)
-    # wave arcs using arc drawing with thick stroke - emulate by drawing multiple arcs
-    for i in range(3):
-        bbox = [spx+22 + i*7, spy+2 - i*4, spx+22 + 30 + i*7, spy+48 + i*4]
-        draw.arc(bbox, start=-60, end=60, fill=ICON_COLOR, width=3)
-
-def seconds_to_mmss(sec):
-    sec = max(0, int(sec))
-    m = sec // 60
-    s = sec % 60
-    return f"{m}:{s:02d}"
+    # speaker (right-most)
+    spx = cx + 300
+    spy = y - 22
+    # speaker box
+    draw.polygon([(spx, spy+18),(spx+22, spy),(spx+22, spy+44),(spx, spy+26)], fill=ICON_COLOR)
+    # waves (3 arcs approximated by lines)
+    draw.arc((spx+26, spy-8, spx+66, spy+52), -60, 60, fill=ICON_COLOR, width=3)
+    draw.arc((spx+34, spy-2, spx+86, spy+58), -60, 60, fill=ICON_COLOR, width=3)
+    draw.arc((spx+42, spy+6, spx+104, spy+66), -60, 60, fill=ICON_COLOR, width=3)
 
 def create_thumbnail(
     album_art_path,
     song_title="Unknown Title",
     artist_name="Unknown Artist",
-    album="Airdopes 131",
+    album_label="Airdopes 131",
     current_seconds=141,
     total_seconds=260,
-    output_path="thumbnail.png",
-    canvas_size=DEFAULT_CANVAS
+    output_path="player_b.png",
+    canvas_size=CANVAS
 ):
-    # --- canvas & widget ---
-    cw, ch = canvas_size
-    canvas = Image.new("RGB", (cw, ch), BG_COLOR)
-    widget_w, widget_h = WIDGET_SIZE
-    widget = Image.new("RGB", (widget_w, widget_h), WIDGET_COLOR)
+    cw,ch = canvas_size
+    canvas = Image.new("RGB",(cw,ch), BG_COLOR)
 
-    # apply subtle inner shadow on widget to match screenshot depth
-    shadow = Image.new("RGBA", (widget_w, widget_h), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(shadow)
-    # darken bottom-left area a bit
-    for i in range(12):
-        alpha = int(18 + i*6)
-        sd.rounded_rectangle((i, i, widget_w-i, widget_h-i), radius=ROUNDS-10, fill=(0,0,0,alpha))
+    # Widget base
+    widget = Image.new("RGB", WIDGET, WIDGET_COLOR)
+    # subtle inner shadow
+    shadow = Image.new("RGBA", WIDGET, (0,0,0,0))
+    ds = ImageDraw.Draw(shadow)
+    for i in range(10):
+        a = int(12 + i*5)
+        ds.rounded_rectangle((i,i,WIDGET[0]-i,WIDGET[1]-i), radius=RADIUS, fill=(0,0,0,a))
     widget = Image.alpha_composite(widget.convert("RGBA"), shadow).convert("RGB")
 
-    # round mask and paste widget on canvas
-    mask = rounded_rectangle_mask((widget_w, widget_h), ROUNDS)
-    canvas.paste(widget, WIDGET_OFFSET, mask)
+    # paste rounded widget on canvas
+    widget_mask = rounded_mask(WIDGET, RADIUS)
+    canvas.paste(widget, WIDGET_POS, widget_mask)
 
-    # --- album art ---
-    art_x, art_y = WIDGET_OFFSET[0], WIDGET_OFFSET[1]
-    # try load album art
+    # Album art area
+    ax,ay = WIDGET_POS
+    # Try to load provided art, otherwise generate placeholder
     if album_art_path and os.path.isfile(album_art_path):
         art = Image.open(album_art_path).convert("RGB")
-        # crop to center square then resize to ART_SIZE preserving aspect mood
-        aw, ah = art.size
-        # scale while preserving aspect and then center crop to ART_SIZE
-        art_thumb = ImageOps.fit(art, ART_SIZE, method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+        art = ImageOps.fit(art, ART_SIZE, method=Image.Resampling.LANCZOS, centering=(0.5,0.5))
     else:
-        art_thumb = generate_placeholder_art(ART_SIZE)
+        art = placeholder_art(ART_SIZE)
 
-    # tint the album art red strongly then apply rounded corners
-    art_tinted = tint_red(art_thumb, strength=0.66)
-    art_mask = rounded_rectangle_mask(ART_SIZE, ROUNDS)
-    art_rgba = art_tinted.copy().convert("RGBA")
+    # Tint art red and round corners
+    art = tint_image(art, strength=0.7)
+    art_rgba = art.convert("RGBA")
+    art_mask = rounded_mask(ART_SIZE, RADIUS)
     art_rgba.putalpha(art_mask)
-    canvas.paste(art_rgba, (art_x, art_y), art_rgba)
+    canvas.paste(art_rgba, (ax,ay), art_rgba)
 
-    # --- content right side (texts, progress, controls) ---
+    # Right-side content (texts, bars, controls)
     draw = ImageDraw.Draw(canvas)
     # fonts
-    f_album = load_font(28)
-    f_title = load_font(68, bold=True)
+    f_album = load_font(30)
+    f_title = load_font(72, bold=True)
     f_artist = load_font(44)
     f_time = load_font(28)
-    # positions (derived to match screenshot)
-    right_x = art_x + ART_SIZE[0] + 60
-    cur_y = art_y + 20
 
-    # small album label
-    draw.text((right_x, cur_y), album, font=f_album, fill=ALBUM_COLOR)
-    cur_y += 52
+    right_x = ax + ART_SIZE[0] + 60
+    cy = ay + 20
 
-    # song title (single-line large; truncate with ellipsis if too long)
-    # We'll measure and if longer than available width, cut and add ellipsis
-    max_title_w = WIDGET_SIZE[0] - (ART_SIZE[0] + 120)
+    # album label
+    draw.text((right_x, cy), album_label, font=f_album, fill=ALBUM_COLOR)
+    cy += 58
+
+    # title (truncate elegantly if too long)
+    max_w = WIDGET[0] - ART_SIZE[0] - 140
     title = song_title
-    # simple truncation:
-    while draw.textlength(title, font=f_title) > max_title_w and len(title) > 4:
+    # truncate using textlength
+    while draw.textlength(title, font=f_title) > max_w and len(title) > 4:
         title = title[:-2]
     if title != song_title:
         title = title[:-3] + "..."
-    draw.text((right_x, cur_y), title, font=f_title, fill=ICON_COLOR)
-    cur_y += 92
+    draw.text((right_x, cy), title, font=f_title, fill=TITLE_COLOR)
+    cy += 96
 
-    # artist line
-    draw.text((right_x, cur_y), artist_name, font=f_artist, fill=TIME_COLOR)
-    cur_y += 78
+    # artist
+    draw.text((right_x, cy), artist_name, font=f_artist, fill=ARTIST_COLOR)
+    cy += 80
 
     # progress bar
     bar_w = 520
     bar_h = 12
-    bar_x = right_x
-    bar_y = cur_y
-    # background
-    draw.rounded_rectangle((bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), radius=8, fill=PROG_BG)
-    # foreground according to progress
+    bx = right_x
+    by = cy
+    draw.rounded_rectangle((bx,by,bx+bar_w,by+bar_h), radius=8, fill=PROG_BG)
     progress = 0.0
-    if total_seconds and total_seconds > 0:
-        progress = max(0.0, min(1.0, float(current_seconds) / float(total_seconds)))
-    fg_w = int(bar_w * progress)
-    if fg_w > 0:
-        draw.rounded_rectangle((bar_x, bar_y, bar_x + fg_w, bar_y + bar_h), radius=8, fill=PROG_FG)
-    # small rounded 'cap' on left to mimic screenshot
-    cap_radius = 6
-    # times under the bar
-    cur_y += 30
-    draw.text((bar_x, cur_y), seconds_to_mmss(current_seconds), font=f_time, fill=TIME_COLOR)
-    draw.text((bar_x + bar_w - 70, cur_y), "-" + seconds_to_mmss(total_seconds), font=f_time, fill=TIME_COLOR)
-    cur_y += 70
+    if total_seconds > 0:
+        progress = max(0.0, min(1.0, float(current_seconds)/float(total_seconds)))
+    fg = int(bar_w * progress)
+    if fg > 0:
+        draw.rounded_rectangle((bx,by,bx+fg,by+bar_h), radius=8, fill=PROG_FG)
+    cy += 30
 
-    # draw controls; center control group horizontally in available right region
-    controls_center_x = right_x + 60
-    controls_top = cur_y
-    draw_controls(draw, controls_center_x, controls_top, spacing=140)
+    # times
+    draw.text((bx, cy), mmss(current_seconds), font=f_time, fill=ARTIST_COLOR)
+    draw.text((bx + bar_w - 80, cy), "-" + mmss(total_seconds), font=f_time, fill=ARTIST_COLOR)
+    cy += 70
 
-    # --- bottom volume bar (near bottom-right of widget) ---
+    # controls (center area)
+    controls_center_x = bx + 120
+    controls_center_y = cy
+    draw_controls(draw, controls_center_x, controls_center_y)
+
+    # bottom volume bar inside widget
+    vol_y = WIDGET_POS[1] + WIDGET[1] - 100
     vol_x = right_x
-    vol_y = WIDGET_OFFSET[1] + WIDGET_SIZE[1] - 110
     vol_w = 480
-    vol_h = 10
-    draw.rounded_rectangle((vol_x, vol_y, vol_x + vol_w, vol_y + vol_h), radius=6, fill=PROG_BG)
-    # assume 70% volume
-    vol_level = int(vol_w * 0.7)
-    draw.rounded_rectangle((vol_x, vol_y, vol_x + vol_level, vol_y + vol_h), radius=6, fill=PROG_FG)
-    # small speaker icons at both ends (left small speaker and right volume speaker)
-    draw.rectangle((vol_x - 12, vol_y + 1, vol_x - 2, vol_y + vol_h - 1), fill=TIME_COLOR)
-    draw.rectangle((vol_x + vol_w + 8, vol_y + 1, vol_x + vol_w + 18, vol_y + vol_h - 1), fill=TIME_COLOR)
+    vol_h = 12
+    draw.rounded_rectangle((vol_x, vol_y, vol_x+vol_w, vol_y+vol_h), radius=8, fill=PROG_BG)
+    vol_level = int(vol_w * 0.72)
+    draw.rounded_rectangle((vol_x, vol_y, vol_x+vol_level, vol_y+vol_h), radius=8, fill=PROG_FG)
+    # small squares at ends like screenshot
+    draw.rectangle((vol_x - 10, vol_y+2, vol_x - 4, vol_y+vol_h-2), fill=ICON_COLOR)
+    draw.rectangle((vol_x + vol_w + 6, vol_y+2, vol_x + vol_w + 12, vol_y+vol_h-2), fill=ICON_COLOR)
 
-    # subtle outer stroke around widget for crispness
-    stroke = Image.new("RGBA", (widget_w, widget_h), (0,0,0,0))
+    # subtle stroke around widget for crisp edges
+    stroke = Image.new("RGBA", WIDGET, (0,0,0,0))
     sd = ImageDraw.Draw(stroke)
-    sd.rounded_rectangle((0,0,widget_w-1,widget_h-1), radius=ROUNDS, outline=(20,8,8,80), width=2)
-    canvas.paste(stroke, WIDGET_OFFSET, stroke)
+    sd.rounded_rectangle((1,1,WIDGET[0]-2,WIDGET[1]-2), radius=RADIUS-2, outline=(20,8,8,80), width=2)
+    canvas.paste(stroke, WIDGET_POS, stroke)
 
-    # final save
+    # Save
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     canvas.save(output_path, quality=95)
-    print("[exact_music_thumbnail] Saved to:", output_path)
+    print("[music_player_thumbnail_b] Saved:", output_path)
     return output_path
 
 # Backwards-compatible wrapper
-def get_thumb(
-    album_art_path,
-    song_title="Unknown Title",
-    artist_name="Unknown Artist",
-    album="Airdopes 131",
-    current_seconds=141,
-    total_seconds=260,
-    output_path="thumbnail.png",
-    canvas_size=DEFAULT_CANVAS
-):
+def get_thumb(album_art_path,
+              song_title="Unknown Title",
+              artist_name="Unknown Artist",
+              album_label="Airdopes 131",
+              current_seconds=141,
+              total_seconds=260,
+              output_path="player_b_out.png",
+              canvas_size=CANVAS):
     return create_thumbnail(
         album_art_path=album_art_path,
         song_title=song_title,
         artist_name=artist_name,
-        album=album,
+        album_label=album_label,
         current_seconds=current_seconds,
         total_seconds=total_seconds,
         output_path=output_path,
         canvas_size=canvas_size
     )
 
-# If run as script, quick demo:
+# Quick demo when run as script
 if __name__ == "__main__":
-    # if you have an album art, put its path here; otherwise leave None to use placeholder
-    sample_art = "album.jpg"  # replace with your file, or ensure album.jpg exists
-    if not os.path.isfile(sample_art):
-        sample_art = None
+    test_art = "album.jpg"  # replace with your image file, or leave absent to test placeholder
+    if not os.path.isfile(test_art):
+        test_art = None
     get_thumb(
-        album_art_path=sample_art,
-        song_title="Anuv Jain - Afsos Ft. Ap",
-        artist_name="N?x? // ? ? ? ?",
-        album="Airdopes 131",
+        album_art_path=test_art,
+        song_title="Salvatore",
+        artist_name="Lana Del Rey",
+        album_label="Airdopes 131",
         current_seconds=141,
-        total_seconds=140,
-        output_path="exact_thumbnail_output.png"
+        total_seconds=260,
+        output_path="player_b_demo.png"
     )

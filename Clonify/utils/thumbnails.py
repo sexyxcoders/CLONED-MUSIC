@@ -1,5 +1,3 @@
-thumbnails.py - Fully Rewritten Module
-
 import os from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 
 --------------------------- CONFIG ---------------------------

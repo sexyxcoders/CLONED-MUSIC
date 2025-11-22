@@ -1,181 +1,174 @@
 """
-Thumbnail Generator Utility
----------------------------
-Generates music-style thumbnail images with background gradients,
-album art, rounded corners, progress bars, playback icons, and text.
+Perfect iOS-Style Music Thumbnail Generator
+-------------------------------------------
+Creates an EXACT replica of the layout shown in the screenshot:
+- Rounded rectangular music widget
+- Red monochrome album-art filter
+- iOS-style progress bar
+- Play/forward/back icons
+- White text with correct alignment
 """
 
-from PIL import Image, ImageDraw, ImageFont
-from typing import Optional
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 import os
 import re
 
-# ---------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------
 
-def sanitize_text(text: str) -> str:
-    """Replace unsupported characters to prevent PIL errors."""
-    return re.sub(r'[^\x00-\xFF]', '?', text)
+# ──────────────────────────────────────────────────────────────
+# Helper Functions
+# ──────────────────────────────────────────────────────────────
 
-def load_font(size: int) -> ImageFont.FreeTypeFont:
-    """Try to load a Unicode-compatible TrueType font."""
-    possible_fonts = [
+def sanitize(text: str) -> str:
+    return re.sub(r"[^\x00-\xFF]", "?", text)
+
+
+def load_font(size: int):
+    fonts = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "./fonts/DejaVuSans-Bold.ttf",
+        "./fonts/DejaVuSans.ttf",
         "./fonts/arial.ttf"
     ]
-    for font_path in possible_fonts:
-        if os.path.isfile(font_path):
+    for f in fonts:
+        if os.path.isfile(f):
             try:
-                return ImageFont.truetype(font_path, size)
+                return ImageFont.truetype(f, size)
             except:
-                continue
-    # Fallback to default PIL font
+                pass
     return ImageFont.load_default()
 
 
-# ---------------------------------------------------------
-# Thumbnail Generator Class
-# ---------------------------------------------------------
+# ──────────────────────────────────────────────────────────────
+# Thumbnail Generator
+# ──────────────────────────────────────────────────────────────
 
-class ThumbnailGenerator:
-    def __init__(self, width: int = 1280, height: int = 720):
+class IOSMusicThumbnail:
+
+    def __init__(self, width=1280, height=720):
         self.width = width
         self.height = height
-        self.margin = 40
 
-    def create_gradient_background(self, color_start=(220, 50, 20), color_end=(80, 20, 10)) -> Image.Image:
-        """Create a vertical gradient background."""
-        img = Image.new("RGB", (self.width, self.height))
-        draw = ImageDraw.Draw(img)
-        for y in range(self.height):
-            ratio = y / float(self.height)
-            r = int(color_start[0] + (color_end[0] - color_start[0]) * ratio)
-            g = int(color_start[1] + (color_end[1] - color_start[1]) * ratio)
-            b = int(color_start[2] + (color_end[2] - color_start[2]) * ratio)
-            draw.line((0, y, self.width, y), fill=(r, g, b))
-        return img
+    def red_filter(self, img: Image.Image) -> Image.Image:
+        """Applies deep red overlay exactly like the screenshot."""
+        red = Image.new("RGB", img.size, (255, 0, 0))
+        return Image.blend(img.convert("RGB"), red, 0.6)
 
-    def resize_album_art(self, path: str, size: int = 350) -> Optional[Image.Image]:
-        if not os.path.isfile(path):
-            print(f"[ThumbnailGenerator] Album art not found: {path}")
-            return None
-        try:
-            img = Image.open(path).convert("RGB")
-            img.thumbnail((size, size), Image.Resampling.LANCZOS)
-            return img
-        except Exception as exc:
-            print("[ThumbnailGenerator] Failed to load album art:", exc)
-            return None
+    def round_rect(self, size, radius=60):
+        """Mask for rounded widget."""
+        w, h = size
+        mask = Image.new("L", (w, h), 0)
+        draw = ImageDraw.Draw(mask)
+        draw.rounded_rectangle((0, 0, w, h), radius=radius, fill=255)
+        return mask
 
-    def round_corners(self, img: Image.Image, radius: int = 30) -> Image.Image:
-        width, height = img.size
-        corner = Image.new("L", (radius * 2, radius * 2), 0)
-        draw = ImageDraw.Draw(corner)
-        draw.ellipse((0, 0, radius * 2, radius * 2), fill=255)
-        mask = Image.new("L", (width, height), 255)
-        mask.paste(corner.crop((0, 0, radius, radius)), (0, 0))
-        mask.paste(corner.crop((radius, 0, radius * 2, radius)), (width - radius, 0))
-        mask.paste(corner.crop((0, radius, radius, radius * 2)), (0, height - radius))
-        mask.paste(corner.crop((radius, radius, radius * 2, radius * 2)), (width - radius, height - radius))
-        img.putalpha(mask)
-        return img
+    def seconds(self, sec: int):
+        return f"{sec//60}:{sec%60:02d}"
 
-    def seconds_to_time(self, seconds: int) -> str:
-        minutes, secs = divmod(seconds, 60)
-        return f"{minutes}:{secs:02d}"
-
-    def create_thumbnail(
+    def create(
         self,
-        album_art_path: str,
-        song_title: str,
-        artist_name: str,
-        album: str = "Airdopes 131",
-        current_seconds: int = 0,
-        total_seconds: int = 0,
-        output_path: str = "thumbnail.png"
-    ) -> str:
+        album_path: str,
+        title: str,
+        artist: str,
+        album="Airdopes 131",
+        current=141,       # 2:21
+        total=140,         # -2:20 (screenshot shows slight mismatch)
+        out="thumbnail.png"
+    ):
 
-        song_title = sanitize_text(song_title)
-        artist_name = sanitize_text(artist_name)
-        album = sanitize_text(album)
+        # ----- Base Full Red Background -----
+        bg = Image.new("RGB", (self.width, self.height), (90, 20, 10))
 
-        current_time = self.seconds_to_time(current_seconds)
-        total_time = self.seconds_to_time(total_seconds)
-        progress = (current_seconds / total_seconds) if total_seconds > 0 else 0.0
+        # ----- Music Widget (Rounded) -----
+        widget = Image.new("RGB", (1100, 500), (65, 10, 10))
+        widget_mask = self.round_rect(widget.size, radius=55)
+        widget.putalpha(widget_mask)
 
-        base = self.create_gradient_background()
-        art = self.resize_album_art(album_art_path)
-        if art is not None:
-            art = self.round_corners(art, 30)
-            base.paste(art, (self.margin, (self.height // 2) - (art.size[1] // 2)), art if art.mode == "RGBA" else None)
+        # Paste widget centered
+        bg.paste(widget, (90, 110), widget)
 
-        draw = ImageDraw.Draw(base)
+        draw = ImageDraw.Draw(bg)
 
-        font_album = load_font(28)
-        font_title = load_font(48)
-        font_artist = load_font(32)
-        font_time = load_font(24)
-        font_control = load_font(32)
+        # -------------------------------
+        # ALBUM ART with red filter
+        # -------------------------------
+        if os.path.isfile(album_path):
+            art = Image.open(album_path).convert("RGB")
+            art = art.resize((430, 500))
+            art = self.red_filter(art)
+            art_mask = self.round_rect((430, 500), radius=55)
+            art.putalpha(art_mask)
+            bg.paste(art, (90, 110), art)
 
-        x = self.margin + 450
-        y = 120
-        draw.text((x, y), album, font=font_album, fill=(200, 150, 120))
-        y += 50
-        draw.text((x, y), song_title, font=font_title, fill=(255, 255, 255))
-        y += 70
-        draw.text((x, y), artist_name, font=font_artist, fill=(200, 200, 200))
+        # -------------------------------
+        # Text Styling
+        # -------------------------------
+        font_small = load_font(35)
+        font_title = load_font(60)
+        font_artist = load_font(45)
+        font_time = load_font(32)
+        font_icons = load_font(55)
 
-        # Progress bar
+        text_x = 560
+        y = 160
+
+        # Album Name
+        draw.text((text_x, y), sanitize(album), fill=(255, 255, 255), font=font_small)
+        y += 60
+
+        # Song Title (bold white)
+        draw.text((text_x, y), sanitize(title), fill=(255, 255, 255), font=font_title)
         y += 80
-        bar_width = 600
-        bar_height = 8
-        draw.rectangle((x, y, x + bar_width, y + bar_height), fill=(80, 50, 40))
-        draw.rectangle((x, y, x + int(bar_width * progress), y + bar_height), fill=(255, 100, 50))
 
-        y += 25
-        draw.text((x, y), current_time, font=font_time, fill=(200, 200, 200))
-        draw.text((x + bar_width - 60, y), "-" + total_time, font=font_time, fill=(200, 200, 200))
+        # Artist Name
+        draw.text((text_x, y), sanitize(artist), fill=(230, 230, 230), font=font_artist)
+        y += 90
 
-        control_y = y + 80
-        controls = ["<<", "||", ">>", "VOL"]
-        for index, label in enumerate(controls):
-            draw.text((x + 100 + index * 80, control_y), label, font=font_control, fill=(255, 255, 255))
+        # -------------------------------
+        # PROGRESS BAR
+        # -------------------------------
+        bar_w = 520
+        bar_h = 10
+        progress = max(0, min(1, current / total))
 
-        vol_x = x + 20
-        vol_y = control_y + 100
-        vol_width = 500
-        vol_height = 6
-        draw.rectangle((vol_x, vol_y, vol_x + vol_width, vol_y + vol_height), fill=(80, 50, 40))
-        draw.rectangle((vol_x, vol_y, vol_x + int(vol_width * 0.7), vol_y + vol_height), fill=(255, 100, 50))
+        # Background bar
+        draw.rounded_rectangle(
+            (text_x, y, text_x + bar_w, y + bar_h),
+            radius=6, fill=(120, 60, 50)
+        )
+        # Progress part
+        draw.rounded_rectangle(
+            (text_x, y, text_x + int(bar_w * progress), y + bar_h),
+            radius=6, fill=(255, 200, 180)
+        )
 
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        base.save(output_path, quality=95)
-        print("[ThumbnailGenerator] Saved thumbnail:", output_path)
-        return output_path
+        # Times
+        draw.text((text_x, y + 20), self.seconds(current), fill=(230, 230, 230), font=font_time)
+        draw.text((text_x + bar_w - 80, y + 20), f"-{self.seconds(total)}", fill=(230, 230, 230), font=font_time)
+
+        # -------------------------------
+        # CONTROL BUTTONS (Centered)
+        # -------------------------------
+        btn_y = y + 110
+        draw.text((text_x + 30, btn_y), "⏮", font=font_icons, fill="white")
+        draw.text((text_x + 130, btn_y), "⏸", font=font_icons, fill="white")
+        draw.text((text_x + 230, btn_y), "⏭", font=font_icons, fill="white")
+        draw.text((text_x + 350, btn_y + 2), "🔊", font=font_icons, fill="white")
+
+        bg.save(out, quality=95)
+        return out
 
 
-# ---------------------------------------------------------
-# Backward-Compatible Wrapper
-# ---------------------------------------------------------
+# Backwards compatibility
+def get_thumb(album_art_path, song_title, artist_name, album="Airdopes 131",
+              current_seconds=141, total_seconds=140, output_path="thumbnail.png"):
 
-def get_thumb(
-    album_art_path: str,
-    song_title: str = "Unknown Title",
-    artist_name: str = "Unknown Artist",
-    album: str = "Airdopes 131",
-    current_seconds: int = 0,
-    total_seconds: int = 0,
-    output_path: str = "thumbnail.png"
-) -> str:
-    gen = ThumbnailGenerator()
-    return gen.create_thumbnail(
-        album_art_path=album_art_path,
-        song_title=song_title,
-        artist_name=artist_name,
+    gen = IOSMusicThumbnail()
+    return gen.create(
+        album_path=album_art_path,
+        title=song_title,
+        artist=artist_name,
         album=album,
-        current_seconds=current_seconds,
-        total_seconds=total_seconds,
-        output_path=output_path
+        current=current_seconds,
+        total=total_seconds,
+        out=output_path
     )

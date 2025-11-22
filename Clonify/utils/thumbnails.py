@@ -15,24 +15,25 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 import os
 import io
 
-# --------------------------- CONFIG (tuned for screenshots) ---------------------------
-CANVAS = (1500, 800)            # overall image size
-WIDGET = (1450, 650)           # inner dark rounded card
-ART_SIZE = (620, 650)          # album art area (square-ish in screenshots)
-RADIUS = 70
+# ================================
+#  DIMENSIONS
+# ================================
+CANVAS = (1500, 800)
+WIDGET = (1450, 650)
 WIDGET_POS = (25, 75)
+RADIUS = 70
+ART_SIZE = (630, 650)
 
-BG_COLOR = (86, 20, 18)
-WIDGET_COLOR = (44, 10, 10)
-RED_TINT = (170, 0, 0)
-
-ALBUM_COLOR = (235, 220, 215)
+# ================================
+#  COLORS (EXACT FROM SCREENSHOT)
+# ================================
+BG_COLOR = (87, 26, 20)
+WIDGET_COLOR = (44, 9, 8)
+RED_TINT = (180, 0, 0)
 TITLE_COLOR = (255, 255, 255)
-ARTIST_COLOR = (210, 200, 195)
-
+ARTIST_COLOR = (215, 205, 200)
 PROG_BG = (95, 38, 34)
-PROG_FG = (255, 200, 192)
-
+PROG_FG = (255, 192, 182)
 ICON_COLOR = (255, 255, 255)
 
 # --------------------------- FONT LOADER ---------------------------

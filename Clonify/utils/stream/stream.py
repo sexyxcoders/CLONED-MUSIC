@@ -1,6 +1,6 @@
 import os
 from random import randint
-from typing import Union
+from typing import Union, Optional
 
 from pyrogram.types import InlineKeyboardMarkup
 
@@ -15,62 +15,143 @@ from Clonify.utils.stream.queue import put_queue, put_queue_index
 from Clonify.utils.pastebin import PROBin
 from Clonify.utils.thumbnails import get_thumb
 
+# third-party for downloading remote thumbnails
+try:
+    import requests
+except Exception:
+    requests = None
+
+# ------------------------------
+# Helper: Download provider thumbnail
+# ------------------------------
+def download_provider_thumbnail(url: str, vidid: str) -> str:
+    """
+    Download provider thumbnail (URL) into ./downloads/{vidid}.jpg.
+    Returns the local path (or './downloads/default.jpg' on failure).
+    """
+    try:
+        os.makedirs("./downloads", exist_ok=True)
+        out_path = f"./downloads/{vidid}.jpg"
+
+        # if file already exists, return it
+        if os.path.isfile(out_path):
+            return out_path
+
+        if not url or not isinstance(url, str):
+            return "./downloads/default.jpg"
+
+        # if it's already a local path
+        if os.path.isfile(url):
+            return url
+
+        # if requests not available, just return default (caller will use fallback)
+        if requests is None:
+            print("[thumbnail-download] requests not available, skipping download")
+            return "./downloads/default.jpg"
+
+        # Basic safety: accept http/https only
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return "./downloads/default.jpg"
+
+        # stream download (small image)
+        r = requests.get(url, timeout=8, stream=True)
+        if r.status_code == 200:
+            with open(out_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if not chunk:
+                        break
+                    f.write(chunk)
+            # verify saved
+            if os.path.isfile(out_path):
+                return out_path
+        else:
+            print(f"[thumbnail-download] HTTP {r.status_code} for {url}")
+    except Exception as e:
+        print(f"[thumbnail-download] error downloading {url}: {e}")
+    return "./downloads/default.jpg"
+
+
 # ------------------------------
 # Thumbnail Generator (safe)
 # ------------------------------
-def safe_generate_thumbnail(vidid: str, title="Unknown", artist="Unknown", provider_thumb: str = None) -> str:
+def safe_generate_thumbnail(vidid: str,
+                            title: str = "Unknown",
+                            artist: str = "Unknown",
+                            provider_thumb: Optional[str] = None) -> str:
     """
     Generate a thumbnail synchronously and return the file path.
-    If thumbnail generation fails, return the best available fallback:
-      1) provider_thumb (if provided and exists)
-      2) config.TELEGRAM_AUDIO_URL or config.SOUNCLOUD_IMG_URL or config.STREAM_IMG_URL (if available)
-      3) './downloads/default.jpg' (local fallback)
+    Flow:
+      1) If provider_thumb is a URL -> attempt to download it into ./downloads/{vidid}.jpg
+      2) Use local ./downloads/{vidid}.jpg (if exists) as album_art_path to produce card via get_thumb()
+      3) If generation fails, fallback to provider_thumb (URL) or configured images or local default
     """
     try:
         os.makedirs("./thumbnails", exist_ok=True)
-        album_art_path = f"./downloads/{vidid}.jpg"
-        if not os.path.isfile(album_art_path):
-            # fallback to downloads default (keep as local fallback)
-            album_art_path = "./downloads/default.jpg"
-        output_path = f"./thumbnails/{vidid}.png"
+    except Exception:
+        pass
 
-        # call existing wrapper get_thumb() from thumbnails.py
-        # signature: get_thumb(album_art_path, song_title=..., artist_name=..., output_path=..., style="A", reference_image=None)
+    # Step 1: ensure we have a local album_art_path
+    album_art_path = f"./downloads/{vidid}.jpg"
+    # If provider provided and is remote URL, try download (will return default path on failure)
+    if provider_thumb and isinstance(provider_thumb, str) and (provider_thumb.startswith("http://") or provider_thumb.startswith("https://")):
         try:
-            # attempt to create thumbnail file
-            ret = get_thumb(
-                album_art_path,
-                song_title=title,
-                artist_name=artist,
-                output_path=output_path,
-                style="A"
-            )
-            # get_thumb in your thumbnails should return the path; otherwise use output_path
-            result_path = ret if isinstance(ret, str) else output_path
+            dl_path = download_provider_thumbnail(provider_thumb, vidid)
+            if dl_path and os.path.isfile(dl_path):
+                album_art_path = dl_path
         except Exception as e:
-            # swallowed so stream doesn't fail — log and continue to fallback
-            print(f"[thumbnail] get_thumb() raised: {e}")
-            result_path = None
+            print(f"[safe_generate_thumbnail] download failed: {e}")
 
-        # verify output exists
-        if result_path and os.path.isfile(result_path):
-            return result_path
+    # If provider_thumb is local path and exists, use it
+    if provider_thumb and isinstance(provider_thumb, str) and os.path.isfile(provider_thumb):
+        album_art_path = provider_thumb
 
+    # If local album_art_path missing, fall back to local default (downloads/default.jpg)
+    if not os.path.isfile(album_art_path):
+        if os.path.isfile("./downloads/default.jpg"):
+            album_art_path = "./downloads/default.jpg"
+        else:
+            # ensure downloads exists and create a tiny default if not present
+            try:
+                os.makedirs("./downloads", exist_ok=True)
+                from PIL import Image
+                tiny = "./downloads/default.jpg"
+                if not os.path.isfile(tiny):
+                    Image.new("RGB", (640, 360), (44, 9, 8)).save(tiny)
+                album_art_path = tiny
+            except Exception:
+                album_art_path = "./downloads/default.jpg"
+
+    # Step 2: call your generator (get_thumb)
+    output_path = f"./thumbnails/{vidid}.png"
+    try:
+        # get_thumb signature in your thumbnails.py:
+        # get_thumb(album_art_path, song_title=..., artist_name=..., output_path=..., style="A", reference_image=None)
+        ret = get_thumb(
+            album_art_path,
+            song_title=title,
+            artist_name=artist,
+            output_path=output_path,
+            style="A"
+        )
+        # Some implementations may return the path, others may not
+        if isinstance(ret, str) and os.path.isfile(ret):
+            return ret
+        if os.path.isfile(output_path):
+            return output_path
     except Exception as e:
-        # any filesystem error; print for debugging and continue to fallback
-        print(f"[thumbnail] unexpected error creating thumbnail: {e}")
+        print(f"[safe_generate_thumbnail] get_thumb() failed: {e}")
 
-    # FALLBACK CHAIN (ensure we return an existing path or a URL)
-    # 1) provider thumbnail (a URL or local path passed by youtube/soundcloud)
+    # Step 3: fallback chain (try provider_thumb first)
     if provider_thumb:
-        # if it's a local file path and exists, return it
-        if os.path.isfile(provider_thumb):
-            return provider_thumb
-        # if it's a URL, return it (pyrogram send_photo accepts URL)
-        if provider_thumb.startswith("http://") or provider_thumb.startswith("https://"):
-            return provider_thumb
+        try:
+            if os.path.isfile(provider_thumb):
+                return provider_thumb
+            if provider_thumb.startswith("http://") or provider_thumb.startswith("https://"):
+                return provider_thumb
+        except Exception:
+            pass
 
-    # 2) configured fallback images from config (try several candidates)
+    # Step 4: try configured images in config
     for candidate in (
         getattr(config, "TELEGRAM_AUDIO_URL", None),
         getattr(config, "SOUNCLOUD_IMG_URL", None),
@@ -80,19 +161,16 @@ def safe_generate_thumbnail(vidid: str, title="Unknown", artist="Unknown", provi
     ):
         if not candidate:
             continue
-        # local file?
         if isinstance(candidate, str) and os.path.isfile(candidate):
             return candidate
-        # url?
         if isinstance(candidate, str) and (candidate.startswith("http://") or candidate.startswith("https://")):
             return candidate
 
-    # 3) local default placeholder (ensure it exists; otherwise create a tiny placeholder)
-    local_default = "./downloads/default.jpg"
-    if os.path.isfile(local_default):
-        return local_default
+    # Step 5: local downloads/default.jpg
+    if os.path.isfile("./downloads/default.jpg"):
+        return "./downloads/default.jpg"
 
-    # last resort: create a tiny red image and return its path
+    # Step 6: create minimal fallback thumbnail
     try:
         from PIL import Image
         tiny_path = "./thumbnails/fallback_default.png"
@@ -100,9 +178,9 @@ def safe_generate_thumbnail(vidid: str, title="Unknown", artist="Unknown", provi
             Image.new("RGB", (640, 360), (44, 9, 8)).save(tiny_path)
         return tiny_path
     except Exception as e:
-        # if pillow isn't available, return a plain string; caller (app.send_photo) will likely fail but we tried
-        print(f"[thumbnail] failed to create tiny fallback image: {e}")
+        print(f"[safe_generate_thumbnail] final fallback failed: {e}")
         return "./downloads/default.jpg"
+
 
 # ------------------------------
 # Main Stream Function
@@ -177,6 +255,7 @@ async def stream(
                     forceplay=forceplay
                 )
 
+                # generate thumbnail (download provider thumb when available)
                 img = safe_generate_thumbnail(vidid, title, user_name, provider_thumb=thumbnail)
                 button = stream_markup(_, chat_id)
                 try:
@@ -218,7 +297,7 @@ async def stream(
         vidid = result["vidid"]
         title = result["title"].title()
         duration_min = result["duration_min"]
-        thumbnail = result["thumb"]
+        thumbnail = result.get("thumb")  # provider thumbnail (url or path)
         status = True if video else None
 
         try:
@@ -257,6 +336,7 @@ async def stream(
                 forceplay=forceplay
             )
 
+            # create/send thumbnail
             img = safe_generate_thumbnail(vidid, title, user_name, provider_thumb=thumbnail)
             button = stream_markup(_, chat_id)
             try:
@@ -274,17 +354,21 @@ async def stream(
             except Exception as e:
                 print(f"[stream][youtube] failed to send photo: {e}")
                 # fallback: try sending provider thumbnail if different
-                if thumbnail and thumbnail != img:
-                    try:
-                        run = await app.send_photo(original_chat_id, photo=thumbnail,
-                                                   caption=_["stream_1"].format(
-                                                       f"https://t.me/{app.username}?start=info_{vidid}",
-                                                       title[:23], duration_min, user_name
-                                                   ), reply_markup=InlineKeyboardMarkup(button))
+                try:
+                    if thumbnail and thumbnail != img:
+                        run = await app.send_photo(
+                            original_chat_id,
+                            photo=thumbnail,
+                            caption=_["stream_1"].format(
+                                f"https://t.me/{app.username}?start=info_{vidid}",
+                                title[:23], duration_min, user_name
+                            ),
+                            reply_markup=InlineKeyboardMarkup(button)
+                        )
                         db[chat_id][0]["mystic"] = run
                         db[chat_id][0]["markup"] = "stream"
-                    except Exception as e2:
-                        print(f"[stream][youtube] provider thumbnail also failed: {e2}")
+                except Exception as e2:
+                    print(f"[stream][youtube] provider thumbnail also failed: {e2}")
 
     # --------------------------
     # SoundCloud
@@ -316,8 +400,8 @@ async def stream(
                 forceplay=forceplay
             )
             button = stream_markup(_, chat_id)
-            # use configured soundcloud image (URL) or fallback
-            img_to_send = getattr(config, "SOUNCLOUD_IMG_URL", None) or safe_generate_thumbnail("sc_"+str(randint(10000,99999)), title, user_name)
+            # use configured soundcloud image (URL) or generated fallback
+            img_to_send = getattr(config, "SOUNCLOUD_IMG_URL", None) or safe_generate_thumbnail("sc_" + str(randint(10000, 99999)), title, user_name)
             try:
                 run = await app.send_photo(
                     original_chat_id,
@@ -331,7 +415,7 @@ async def stream(
                 print(f"[stream][soundcloud] failed to send photo: {e}")
 
     # --------------------------
-    # Telegram
+    # Telegram (uploaded audio/video)
     # --------------------------
     elif streamtype == "telegram":
         file_path = result["path"]

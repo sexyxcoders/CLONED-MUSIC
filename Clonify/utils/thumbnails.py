@@ -1,329 +1,487 @@
+"""
+thumbnails.py - Pixel-accurate red music player thumbnail generator.
+
+Usage:
+    from thumbnails import generate_thumbnail, get_thumb
+    generate_thumbnail(style="A", album_art_path="cover.jpg", song_title="Salvatore",
+                       artist_name="Lana Del Rey", album_label="Airdopes 131",
+                       current_seconds=141, total_seconds=260,
+                       output_path="player_demo.png",
+                       reference_image="reference.png")
+
+If reference_image is provided, key colors will be sampled from it for a perfect match.
+"""
+
 from typing import Optional, Union
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 import os
+import math
 
-# ==========================================
-# EXACT DIMENSIONS FROM SCREENSHOT
-# ==========================================
-CANVAS_WIDTH = 1500
-CANVAS_HEIGHT = 800
-WIDGET_WIDTH = 1450
-WIDGET_HEIGHT = 650
-WIDGET_X = 25
-WIDGET_Y = 75
-CORNER_RADIUS = 70
-ALBUM_ART_WIDTH = 630
-ALBUM_ART_HEIGHT = 650
+# ---------------------------
+# BASE DIMENSIONS (match screenshot)
+# ---------------------------
+CANVAS = (1500, 800)           # overall image size
+WIDGET = (1450, 650)          # inner rounded card size
+WIDGET_POS = (25, 75)         # widget top-left on canvas
+RADIUS = 70                   # widget corner radius
+ART_SIZE = (630, 650)         # left album art area (exact from screenshot)
 
-# ==========================================
-# EXACT COLORS (sampled from screenshot)
-# ==========================================
-BG_COLOR = (87, 26, 20)              # outer background
-WIDGET_BG = (44, 9, 8)               # card background
-ALBUM_TINT = (180, 0, 0)             # red overlay on album art
-TEXT_TITLE = (255, 255, 255)         # "Salvatore" - pure white
-TEXT_ARTIST = (215, 205, 200)        # "Lana Del Rey" - light gray
-TEXT_LABEL = (238, 220, 214)         # "Airdopes 131" - cream
-PROGRESS_BG = (95, 38, 34)           # progress bar background
-PROGRESS_FG = (255, 192, 182)        # progress bar fill
-ICON_COLOR = (255, 255, 255)         # buttons/icons white
-VOLUME_BG = (95, 38, 34)
-VOLUME_FG = (255, 192, 182)
+# ---------------------------
+# DEFAULT COLORS (sampled approximate)
+# They will be overridden if a reference image is provided
+# ---------------------------
+BG_COLOR = (87, 26, 20)
+WIDGET_COLOR = (44, 9, 8)
+RED_TINT = (180, 0, 0)
+TITLE_COLOR = (255, 255, 255)
+ARTIST_COLOR = (215, 205, 200)
+ALBUM_COLOR = (238, 220, 214)
+PROG_BG = (95, 38, 34)
+PROG_FG = (255, 192, 182)
+ICON_COLOR = (255, 255, 255)
 
-# ==========================================
-# FONT FALLBACKS
-# ==========================================
-FONT_PATHS = [
+# ---------------------------
+# FONT PATHS (common fallbacks)
+# ---------------------------
+_FONT_PATHS = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    "C:\\Windows\\Fonts\\arial.ttf",
     "./fonts/DejaVuSans-Bold.ttf",
+    "./fonts/DejaVuSans.ttf",
+    "./fonts/Arial.ttf",
 ]
 
-def get_font(size, bold=False):
-    for path in FONT_PATHS:
+
+def load_font(size: int, bold: bool = False):
+    # prefer a Bold file when bold=True
+    for p in _FONT_PATHS:
         try:
-            if os.path.isfile(path):
-                return ImageFont.truetype(path, size)
-        except:
-            pass
-    return ImageFont.load_default()
+            if not os.path.isfile(p):
+                continue
+            name = os.path.basename(p).lower()
+            if bold and "bold" in name:
+                return ImageFont.truetype(p, size)
+            if not bold and "bold" not in name:
+                return ImageFont.truetype(p, size)
+        except Exception:
+            continue
+    # final fallback
+    try:
+        return ImageFont.load_default()
+    except Exception:
+        raise RuntimeError("No usable font found")
 
-# ==========================================
-# UTILITIES
-# ==========================================
-def rounded_rectangle_mask(size, radius):
-    """Create rounded rectangle mask."""
-    mask = Image.new("L", size, 0)
-    draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle((0, 0, size[0]-1, size[1]-1), radius=radius, fill=255)
-    return mask
 
-def apply_red_tint(img, tint_color=ALBUM_TINT, strength=0.65):
-    """Apply red color overlay to image."""
+# ---------------------------
+# Utilities
+# ---------------------------
+def ensure_dir(path: str) -> None:
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+
+
+def rounded_mask(size, radius):
+    m = Image.new("L", size, 0)
+    d = ImageDraw.Draw(m)
+    d.rounded_rectangle((0, 0, size[0], size[1]), radius=radius, fill=255)
+    return m
+
+
+def tint_image(img: Image.Image, tint_color=RED_TINT, strength=0.65) -> Image.Image:
     overlay = Image.new("RGB", img.size, tint_color)
     return Image.blend(img.convert("RGB"), overlay, strength)
 
-def seconds_to_mmss(seconds):
-    """Convert seconds to MM:SS format."""
-    s = max(0, int(seconds))
+
+def mmss(sec: Union[int, float]) -> str:
+    s = max(0, int(sec))
     return f"{s // 60}:{s % 60:02d}"
 
-def load_album_art(path):
-    """Load and validate album art."""
-    if path is None:
-        return create_placeholder()
-    if isinstance(path, str) and os.path.isfile(path):
+
+def _open_album_art(candidate: Optional[Union[str, Image.Image]]):
+    if candidate is None:
+        return None
+    if isinstance(candidate, Image.Image):
+        return candidate.convert("RGB")
+    if isinstance(candidate, str) and os.path.isfile(candidate):
         try:
-            return Image.open(path).convert("RGB")
-        except:
-            return create_placeholder()
-    if isinstance(path, Image.Image):
-        return path.convert("RGB")
-    return create_placeholder()
+            return Image.open(candidate).convert("RGB")
+        except Exception:
+            return None
+    return None
 
-def create_placeholder():
-    """Create gradient placeholder."""
-    img = Image.new("RGB", (ALBUM_ART_WIDTH, ALBUM_ART_HEIGHT), (30, 10, 10))
-    draw = ImageDraw.Draw(img)
-    for y in range(ALBUM_ART_HEIGHT):
-        ratio = y / max(1, ALBUM_ART_HEIGHT - 1)
-        r = int(30 + (200 - 30) * ratio)
-        draw.line((0, y, ALBUM_ART_WIDTH, y), fill=(r, 8, 8))
-    return img
 
-# ==========================================
-# ICON DRAWING FUNCTIONS
-# ==========================================
-def draw_play_button(draw, x, y, size=1.0, color=ICON_COLOR):
-    """Draw play triangle."""
-    scale = int(24 * size)
-    draw.polygon([
-        (x - scale, y - scale),
-        (x - scale, y + scale),
-        (x + scale, y)
-    ], fill=color)
+def sample_colors_from_reference(ref_img_path: str):
+    """
+    Sample key colors from the provided reference image.
+    Returns a dict with BG_COLOR, WIDGET_COLOR, RED_TINT, TITLE_COLOR, ARTIST_COLOR, ALBUM_COLOR, PROG_BG, PROG_FG, ICON_COLOR
+    """
+    try:
+        r = Image.open(ref_img_path).convert("RGB")
+    except Exception:
+        return None
 
-def draw_pause_button(draw, x, y, size=1.0, color=ICON_COLOR):
-    """Draw pause bars."""
-    h = int(28 * size)
-    w = int(8 * size)
-    gap = int(6 * size)
-    # Left bar
-    draw.rectangle((x - w - gap, y - h, x - gap, y + h), fill=color)
-    # Right bar
-    draw.rectangle((x + gap, y - h, x + w + gap, y + h), fill=color)
+    w, h = r.size
 
-def draw_skip_back(draw, x, y, size=1.0, color=ICON_COLOR):
-    """Draw skip back (double bars)."""
-    t = int(17 * size)
-    # Vertical line
-    draw.rectangle((x - t - 6, y - t, x - t - 2, y + t), fill=color)
-    # Triangle
-    draw.polygon([
-        (x + t, y - t),
-        (x + t, y + t),
-        (x - 2, y)
-    ], fill=color)
+    # sample at a few strategic points (corners, center-left artwork area, right text area)
+    def at(x_pct, y_pct):
+        x = min(w - 1, max(0, int(x_pct * w)))
+        y = min(h - 1, max(0, int(y_pct * h)))
+        return r.getpixel((x, y))
 
-def draw_skip_next(draw, x, y, size=1.0, color=ICON_COLOR):
-    """Draw skip next (double bars)."""
-    t = int(17 * size)
-    # Triangle
-    draw.polygon([
-        (x - t, y - t),
-        (x - t, y + t),
-        (x + 2, y)
-    ], fill=color)
-    # Vertical line
-    draw.rectangle((x + t + 2, y - t, x + t + 6, y + t), fill=color)
+    samples = {
+        "bg": at(0.5, 0.5),               # approximate center -> widget bg color
+        "edge": at(0.02, 0.5),            # left edge margin -> outer bg
+        "art_center": at(0.22, 0.45),     # inside album art
+        "title": at(0.65, 0.15),          # near title text
+        "artist": at(0.65, 0.23),         # near artist text
+        "prog_bg": at(0.65, 0.28),
+        "prog_fg": at(0.65, 0.28),        # same area; we'll lighten/darken
+        "icon": at(0.85, 0.5),
+    }
 
-def draw_speaker(draw, x, y, size=1.0, color=ICON_COLOR):
-    """Draw speaker icon."""
-    scale = int(10 * size)
-    # Speaker cone
-    draw.polygon([
-        (x - scale, y - scale),
-        (x - scale, y + scale),
-        (x, y + scale),
-        (x, y - scale)
-    ], fill=color)
-    # Speaker back
-    draw.rectangle((x + 2, y - scale // 2, x + scale // 2, y + scale // 2), fill=color)
+    # Make slight adjustments for best contrasting colors
+    def lighten(c, amount=30):
+        return tuple(min(255, int(ch + amount)) for ch in c)
 
-def draw_bluetooth(draw, x, y, size=1.0, color=ICON_COLOR):
-    """Draw bluetooth symbol."""
-    scale = int(12 * size)
-    # Central line
-    draw.line((x, y - scale, x, y + scale), fill=color, width=3)
-    # Upper right diagonal
-    draw.line((x, y - scale, x + scale, y), fill=color, width=3)
-    # Lower right diagonal
-    draw.line((x, y + scale, x + scale, y), fill=color, width=3)
+    def darken(c, amount=30):
+        return tuple(max(0, int(ch - amount)) for ch in c)
 
-# ==========================================
-# MAIN GENERATOR
-# ==========================================
-def generate_thumbnail(
-    song_title="Salvatore",
-    artist_name="Lana Del Rey",
-    album_label="Airdopes 131",
-    album_art_path=None,
-    current_seconds=141,
-    total_seconds=260,
-    output_path="player_thumb.png"
-):
-    """Generate exact music player thumbnail."""
+    sampled = {
+        "BG_COLOR": samples["edge"],
+        "WIDGET_COLOR": samples["bg"],
+        "RED_TINT": samples["art_center"],
+        "TITLE_COLOR": lighten(samples["title"], 30) if samples["title"] else (255, 255, 255),
+        "ARTIST_COLOR": lighten(samples["artist"], 8) if samples["artist"] else (215, 205, 200),
+        "ALBUM_COLOR": lighten(samples["title"], 6) if samples["title"] else (238, 220, 214),
+        "PROG_BG": darken(samples["prog_bg"], 30),
+        # for progress foreground, pick a lightened variant so it stands out
+        "PROG_FG": lighten(samples["prog_fg"], 80),
+        "ICON_COLOR": samples["icon"],
+    }
 
-    # Create base canvas
-    canvas = Image.new("RGB", (CANVAS_WIDTH, CANVAS_HEIGHT), BG_COLOR)
+    return sampled
 
-    # Create rounded widget background
-    widget = Image.new("RGB", (WIDGET_WIDTH, WIDGET_HEIGHT), WIDGET_BG)
-    widget_mask = rounded_rectangle_mask((WIDGET_WIDTH, WIDGET_HEIGHT), CORNER_RADIUS)
-    canvas.paste(widget, (WIDGET_X, WIDGET_Y), widget_mask)
 
-    # Load and process album art
-    album_art = load_album_art(album_art_path)
-    album_art = ImageOps.fit(album_art, (ALBUM_ART_WIDTH, ALBUM_ART_HEIGHT), Image.Resampling.LANCZOS)
-    album_art = apply_red_tint(album_art, ALBUM_TINT, 0.65)
+# ---------------------------
+# Vector icon drawing (scaleable)
+# ---------------------------
+def draw_prev(draw: ImageDraw.Draw, x, y, scale=1.0, fill=(255, 255, 255)):
+    t = int(34 * scale)
+    # left triangles (two triangles to simulate double-previous)
+    draw.polygon([(x - t - 8, y), (x - 8, y - t // 2), (x - 8, y + t // 2)], fill=fill)
+    draw.polygon([(x + 6 - 8, y), (x + t + 6 - 8, y - t // 2), (x + t + 6 - 8, y + t // 2)], fill=fill)
 
-    # Apply rounded mask to album art
-    art_mask = rounded_rectangle_mask((ALBUM_ART_WIDTH, ALBUM_ART_HEIGHT), 28)
-    album_art = album_art.convert("RGBA")
-    album_art.putalpha(art_mask)
-    canvas.paste(album_art, (WIDGET_X, WIDGET_Y), album_art)
 
-    # Start drawing on canvas
+def draw_pause(draw: ImageDraw.Draw, x, y, scale=1.0, fill=(255, 255, 255)):
+    h = int(56 * scale)
+    w = int(16 * scale)
+    # left bar
+    draw.rectangle((x - w - 8, y - h // 2, x - 4 - 8, y + h // 2), fill=fill)
+    # right bar
+    draw.rectangle((x + 4 - 8, y - h // 2, x + w + 4 - 8, y + h // 2), fill=fill)
+
+
+def draw_next(draw: ImageDraw.Draw, x, y, scale=1.0, fill=(255, 255, 255)):
+    t = int(34 * scale)
+    # right triangles
+    draw.polygon([(x + t + 8, y), (x + 8, y - t // 2), (x + 8, y + t // 2)], fill=fill)
+    draw.polygon([(x + t + 6 + 8, y), (x + 2 * t + 6 + 8, y - t // 2), (x + 2 * t + 6 + 8, y + t // 2)], fill=fill)
+
+
+# ---------------------------
+# Placeholder art (if no album provided)
+# ---------------------------
+def placeholder_art(size):
+    w, h = size
+    base = Image.new("RGB", (w, h), (30, 10, 10))
+    draw = ImageDraw.Draw(base)
+    for yy in range(h):
+        t = yy / max(1, h - 1)
+        r = int(30 + (200 - 30) * t)
+        draw.line((0, yy, w, yy), fill=(r, 8, 8))
+    # subtle overlay red
+    overlay = Image.new("RGBA", (w, h), (180, 0, 0, 60))
+    base = Image.alpha_composite(base.convert("RGBA"), overlay).convert("RGB")
+    return base
+
+
+# ---------------------------
+# Style A: Pixel-accurate player (main)
+# ---------------------------
+def generate_style_a(album_art_path,
+                     song_title,
+                     artist_name,
+                     album_label,
+                     current_seconds,
+                     total_seconds,
+                     output_path,
+                     reference_image: Optional[str] = None):
+    """
+    Generate a thumbnail replicating the provided screenshot exactly.
+
+    - If reference_image is provided, sample exact colors from it.
+    - album_art_path may be None, a path, or PIL Image.
+    """
+
+    # if reference image provided, sample palette
+    global BG_COLOR, WIDGET_COLOR, RED_TINT, TITLE_COLOR, ARTIST_COLOR, ALBUM_COLOR, PROG_BG, PROG_FG, ICON_COLOR
+    if reference_image and os.path.isfile(reference_image):
+        sampled = sample_colors_from_reference(reference_image)
+        if sampled:
+            BG_COLOR = sampled["BG_COLOR"]
+            WIDGET_COLOR = sampled["WIDGET_COLOR"]
+            RED_TINT = sampled["RED_TINT"]
+            TITLE_COLOR = sampled["TITLE_COLOR"]
+            ARTIST_COLOR = sampled["ARTIST_COLOR"]
+            ALBUM_COLOR = sampled["ALBUM_COLOR"]
+            PROG_BG = sampled["PROG_BG"]
+            PROG_FG = sampled["PROG_FG"]
+            ICON_COLOR = sampled["ICON_COLOR"]
+
+    # prepare canvas and widget (rounded)
+    canvas = Image.new("RGB", CANVAS, BG_COLOR)
+    widget = Image.new("RGB", WIDGET, WIDGET_COLOR)
+    mask_w = rounded_mask(WIDGET, RADIUS)
+    canvas.paste(widget, WIDGET_POS, mask_w)
+
+    # load album art (if None, use placeholder)
+    art = _open_album_art(album_art_path)
+    if art is None:
+        art = placeholder_art(ART_SIZE)
+    art = ImageOps.fit(art, ART_SIZE, Image.Resampling.LANCZOS)
+    # apply red tint like screenshot
+    art = tint_image(art, RED_TINT, strength=0.65)
+    art_rgba = art.convert("RGBA")
+    art_rgba.putalpha(rounded_mask(ART_SIZE, 28))  # smaller radius for art corners
+    canvas.paste(art_rgba, WIDGET_POS, art_rgba)
+
     draw = ImageDraw.Draw(canvas)
 
-    # Load fonts - exact sizes from screenshot
-    font_label = get_font(42)
-    font_title = get_font(90)
-    font_artist = get_font(50)
-    font_time = get_font(34)
+    # fonts tuned to screenshot (fallbacks)
+    f_album = load_font(42)
+    f_title = load_font(90, bold=True)
+    f_artist = load_font(50)
+    f_time = load_font(34)
 
-    # Text positioning
-    text_x = WIDGET_X + ALBUM_ART_WIDTH + 70
-    text_y = WIDGET_Y + 30
+    # text block measured from screenshot
+    right_x = WIDGET_POS[0] + ART_SIZE[0] + 70
+    y = WIDGET_POS[1] + 30
 
-    # Draw album label (small text above title)
-    draw.text((text_x, text_y), album_label, font=font_label, fill=TEXT_LABEL)
-    text_y += 70
+    # album label (small)
+    draw.text((right_x, y), album_label, font=f_album, fill=ALBUM_COLOR)
+    y += 70
 
-    # Draw song title
-    title_text = song_title
-    title_bbox = draw.textbbox((0, 0), title_text, font=font_title)
-    title_width = title_bbox[2] - title_bbox[0]
+    # title - auto-fit width
+    max_w = WIDGET[0] - ART_SIZE[0] - 180
+    # reduce font size until it fits visually
+    title_font = f_title
+    while draw.textlength(song_title, font=title_font) > max_w and getattr(title_font, "size", 80) > 20:
+        size_new = getattr(title_font, "size", 90) - 6
+        title_font = load_font(size_new, bold=True)
+    title_to_draw = song_title
+    # truncate long titles
+    while draw.textlength(title_to_draw, font=title_font) > max_w and len(title_to_draw) > 4:
+        title_to_draw = title_to_draw[:-2]
+    if title_to_draw != song_title:
+        title_to_draw = title_to_draw[:-3] + "..." if len(title_to_draw) > 3 else title_to_draw + "..."
 
-    # Truncate if too long
-    max_width = WIDGET_WIDTH - ALBUM_ART_WIDTH - 180
-    if title_width > max_width:
-        while len(title_text) > 3 and draw.textbbox((0, 0), title_text + "...", font=font_title)[2] > max_width:
-            title_text = title_text[:-1]
-        title_text += "..."
+    draw.text((right_x, y), title_to_draw, font=title_font, fill=TITLE_COLOR)
+    y += getattr(title_font, "size", 60) + 28
 
-    draw.text((text_x, text_y), title_text, font=font_title, fill=TEXT_TITLE)
-    text_y += 100
+    # artist
+    artist_font = f_artist
+    while draw.textlength(artist_name, font=artist_font) > max_w and getattr(artist_font, "size", 50) > 12:
+        artist_font = load_font(getattr(artist_font, "size", 50) - 4)
+    draw.text((right_x, y), artist_name, font=artist_font, fill=ARTIST_COLOR)
+    y += getattr(artist_font, "size", 40) + 60
 
-    # Draw artist name
-    draw.text((text_x, text_y), artist_name, font=font_artist, fill=TEXT_ARTIST)
-    text_y += 80
+    # progress bar
+    bar_w = 620
+    bar_h = 14
+    bx, by = right_x, y
+    # bg
+    draw.rounded_rectangle((bx, by, bx + bar_w, by + bar_h), radius=10, fill=PROG_BG)
+    # compute progress fraction safely
+    try:
+        progress = max(0.0, min(1.0, float(current_seconds) / float(max(1.0, total_seconds))))
+    except Exception:
+        progress = 0.0
+    fg = int(bar_w * progress)
+    if fg > 0:
+        draw.rounded_rectangle((bx, by, bx + fg, by + bar_h), radius=10, fill=PROG_FG)
 
-    # Progress bar
-    bar_width = 620
-    bar_height = 14
-    bar_x = text_x
-    bar_y = text_y
+    # times (left current, right remaining)
+    y_time = by + bar_h + 10
+    draw.text((bx, y_time), mmss(current_seconds), font=f_time, fill=ARTIST_COLOR)
+    draw.text((bx + bar_w - 110, y_time), "-" + mmss(total_seconds), font=f_time, fill=ARTIST_COLOR)
 
-    # Background
-    draw.rounded_rectangle(
-        (bar_x, bar_y, bar_x + bar_width, bar_y + bar_height),
-        radius=10,
-        fill=PROGRESS_BG
-    )
+    # playback controls row
+    icon_center_y = WIDGET_POS[1] + 330
+    center_x = bx + bar_w // 2
 
-    # Progress fill
-    if total_seconds > 0:
-        progress = current_seconds / total_seconds
-        fill_width = int(bar_width * progress)
-        draw.rounded_rectangle(
-            (bar_x, bar_y, bar_x + fill_width, bar_y + bar_height),
-            radius=10,
-            fill=PROGRESS_FG
-        )
+    # draw prev / pause / next using the vector routines
+    draw_prev(draw, center_x - 150, icon_center_y, scale=1.2, fill=ICON_COLOR)
+    draw_pause(draw, center_x - 12, icon_center_y, scale=1.2, fill=ICON_COLOR)
+    draw_next(draw, center_x + 120, icon_center_y, scale=1.2, fill=ICON_COLOR)
 
-    # Time labels
-    time_y = bar_y + bar_height + 10
-    current_str = seconds_to_mmss(current_seconds)
-    remaining_str = "-" + seconds_to_mmss(total_seconds - current_seconds)
+    # bluetooth + speaker icons (simple vector approximations)
+    # speaker (left of bluetooth)
+    sp_x = bx + bar_w + 28
+    sp_y = icon_center_y
+    # small speaker triangle + rectangle
+    draw.polygon([(sp_x - 26, sp_y - 14), (sp_x - 6, sp_y - 14), (sp_x + 2, sp_y - 4), (sp_x + 2, sp_y + 4), (sp_x - 6, sp_y + 14), (sp_x - 26, sp_y + 14)], fill=ICON_COLOR)
+    # bluetooth (approx) to the right of speaker
+    bt_x = sp_x + 32
+    bt_y = sp_y
+    # simplified bluetooth: two crossing triangles/lines
+    draw.line((bt_x - 4, bt_y - 20, bt_x + 14, bt_y), fill=ICON_COLOR, width=4)
+    draw.line((bt_x + 14, bt_y, bt_x - 4, bt_y + 20), fill=ICON_COLOR, width=4)
+    draw.line((bt_x - 4, bt_y - 20, bt_x - 4, bt_y + 20), fill=ICON_COLOR, width=2)
 
-    draw.text((bar_x, time_y), current_str, font=font_time, fill=TEXT_ARTIST)
-    draw.text((bar_x + bar_width - 120, time_y), remaining_str, font=font_time, fill=TEXT_ARTIST)
+    # bottom volume bar (near bottom right area)
+    vol_y = WIDGET_POS[1] + WIDGET[1] - 120
+    vol_x = right_x
+    vol_w = 560
+    vol_h = 14
+    draw.rounded_rectangle((vol_x, vol_y, vol_x + vol_w, vol_y + vol_h), radius=8, fill=PROG_BG)
+    vol_level = int(vol_w * 0.72)
+    draw.rounded_rectangle((vol_x, vol_y, vol_x + vol_level, vol_y + vol_h), radius=8, fill=PROG_FG)
+    # little end blocks as in screenshot
+    draw.rectangle((vol_x - 14, vol_y + 2, vol_x - 6, vol_y + vol_h - 2), fill=ICON_COLOR)
+    draw.rectangle((vol_x + vol_w + 6, vol_y + 2, vol_x + vol_w + 14, vol_y + vol_h - 2), fill=ICON_COLOR)
 
-    # Control buttons
-    button_y = WIDGET_Y + 330
-    button_center_x = bar_x + bar_width // 2 - 60
-
-    draw_skip_back(draw, button_center_x - 80, button_y, 1.0, ICON_COLOR)
-    draw_pause_button(draw, button_center_x, button_y, 1.0, ICON_COLOR)
-    draw_skip_next(draw, button_center_x + 80, button_y, 1.0, ICON_COLOR)
-
-    # Speaker and bluetooth icons
-    draw_speaker(draw, bar_x + bar_width + 60, button_y, 1.0, ICON_COLOR)
-    draw_bluetooth(draw, bar_x + bar_width + 110, button_y, 0.8, ICON_COLOR)
-
-    # Volume bar (bottom)
-    volume_y = WIDGET_Y + WIDGET_HEIGHT - 120
-    volume_width = 560
-    volume_height = 14
-
-    draw.rounded_rectangle(
-        (bar_x, volume_y, bar_x + volume_width, volume_y + volume_height),
-        radius=8,
-        fill=VOLUME_BG
-    )
-
-    # Volume fill (approximately 72%)
-    volume_level = int(volume_width * 0.72)
-    draw.rounded_rectangle(
-        (bar_x, volume_y, bar_x + volume_level, volume_y + volume_height),
-        radius=8,
-        fill=VOLUME_FG
-    )
-
-    # Volume slider endpoints
-    draw.rectangle((bar_x - 14, volume_y + 2, bar_x - 6, volume_y + volume_height - 2), fill=ICON_COLOR)
-    draw.rectangle((bar_x + volume_width + 6, volume_y + 2, bar_x + volume_width + 14, volume_y + volume_height - 2), fill=ICON_COLOR)
-
-    # Save output
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    ensure_dir(output_path)
     canvas.save(output_path, quality=95)
-    print(f"✓ Thumbnail saved: {output_path}")
     return output_path
 
-# ==========================================
-# USAGE EXAMPLES
-# ==========================================
+
+# ---------------------------
+# Style B & C (kept simple)
+# ---------------------------
+def generate_style_b(album_art_path, song_title, artist_name, album_label,
+                     current_seconds, total_seconds, output_path, reference_image: Optional[str] = None):
+    img_w, img_h = 900, 900
+    img = Image.new("RGB", (img_w, img_h), (20, 20, 20))
+    draw = ImageDraw.Draw(img)
+    art = _open_album_art(album_art_path)
+    if art is None:
+        art = placeholder_art((800, 800))
+    else:
+        art = ImageOps.fit(art, (800, 800), Image.Resampling.LANCZOS)
+    img.paste(art, (50, 50))
+    f_title = load_font(56, bold=True)
+    f_artist = load_font(36)
+    draw.text((60, 800), song_title, font=f_title, fill=TITLE_COLOR)
+    draw.text((60, 860), artist_name, font=f_artist, fill=ARTIST_COLOR)
+    ensure_dir(output_path)
+    img.save(output_path, quality=95)
+    return output_path
+
+
+def generate_style_c(album_art_path, song_title, artist_name, album_label,
+                     current_seconds, total_seconds, output_path, reference_image: Optional[str] = None):
+    w, h = CANVAS
+    img = Image.new("RGB", (w, h), (30, 30, 30))
+    draw = ImageDraw.Draw(img)
+    for yy in range(h):
+        g = int(30 + (120 - 30) * (yy / max(1, h - 1)))
+        draw.line((0, yy, w, yy), fill=(g, int(g * 0.6), int(g * 0.4)))
+    art = _open_album_art(album_art_path)
+    if art is None:
+        art = placeholder_art((520, 520))
+    else:
+        art = ImageOps.fit(art, (520, 520), Image.Resampling.LANCZOS)
+    img.paste(art, (60, 100))
+    f_title = load_font(70, bold=True)
+    f_artist = load_font(40)
+    draw.text((620, 150), song_title, font=f_title, fill=TITLE_COLOR)
+    draw.text((620, 240), artist_name, font=f_artist, fill=ARTIST_COLOR)
+    ensure_dir(output_path)
+    img.save(output_path, quality=95)
+    return output_path
+
+
+# ---------------------------
+# PUBLIC API
+# ---------------------------
+_STYLE_MAP = {
+    "A": generate_style_a,
+    "B": generate_style_b,
+    "C": generate_style_c,
+}
+
+
+def generate_thumbnail(style: str = "A",
+                       album_art_path: Optional[Union[str, Image.Image]] = None,
+                       song_title: str = "Unknown Title",
+                       artist_name: str = "Unknown Artist",
+                       album_label: str = "Airdopes 131",
+                       current_seconds: int = 0,
+                       total_seconds: int = 200,
+                       output_path: str = "thumbnail.png",
+                       reference_image: Optional[str] = None):
+    """
+    Main factory. Pass reference_image to sample perfect colors from screenshot.
+    """
+    style = (style or "A").upper()
+    if style not in _STYLE_MAP:
+        raise ValueError("Unknown style '%s'. Use 'A', 'B', or 'C'." % style)
+    # call chosen style function
+    return _STYLE_MAP[style](
+        album_art_path=album_art_path,
+        song_title=song_title,
+        artist_name=artist_name,
+        album_label=album_label,
+        current_seconds=current_seconds,
+        total_seconds=total_seconds,
+        output_path=output_path,
+        reference_image=reference_image
+    )
+
+
+# Backwards compatibility wrapper used by your codebase
+def get_thumb(album_art_path,
+              song_title="Unknown Title",
+              artist_name="Unknown Artist",
+              album_label="Airdopes 131",
+              current_seconds=0,
+              total_seconds=200,
+              output_path="thumbnail.png",
+              style="A",
+              reference_image: Optional[str] = None):
+    return generate_thumbnail(
+        style=style,
+        album_art_path=album_art_path,
+        song_title=song_title,
+        artist_name=artist_name,
+        album_label=album_label,
+        current_seconds=current_seconds,
+        total_seconds=total_seconds,
+        output_path=output_path,
+        reference_image=reference_image
+    )
+
+
+# ---------------------------
+# Quick CLI demo if executed directly
+# ---------------------------
 if __name__ == "__main__":
-    # Example 1: With no album art
+    # The uploaded screenshot you provided — put its filename here to get exact sampling
+    REF = "reference_player.png"  # replace with the path to the screenshot you uploaded
+    demo_art = None
+    if os.path.exists("album.jpg"):
+        demo_art = "album.jpg"
+    # Create the pixel-accurate output using the reference for color sampling
     generate_thumbnail(
+        style="A",
+        album_art_path=demo_art,
         song_title="Salvatore",
         artist_name="Lana Del Rey",
         album_label="Airdopes 131",
         current_seconds=141,
         total_seconds=260,
-        output_path="player_default.png"
+        output_path="player_demo_exact.png",
+        reference_image=REF
     )
-
-    # Example 2: With custom album art (uncomment if you have an image)
-    # generate_thumbnail(
-    #     song_title="Salvatore",
-    #     artist_name="Lana Del Rey",
-    #     album_label="Airdopes 131",
-    #     album_art_path="album_cover.jpg",
-    #     current_seconds=141,
-    #     total_seconds=260,
-    #     output_path="player_with_art.png"
-    # )
+    print("Wrote player_demo_exact.png (uses reference_image for perfect color matching)")

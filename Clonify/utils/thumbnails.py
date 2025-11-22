@@ -169,6 +169,7 @@ class ThumbnailGenerator:
                         vol_y + vol_height), fill=(255, 100, 50))
 
         # Save thumbnail
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         base.save(output_path, quality=95)
         print("[ThumbnailGenerator] Saved thumbnail:", output_path)
         return output_path
